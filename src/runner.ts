@@ -300,6 +300,7 @@ export async function runSession(
 // ── Page mode helpers ─────────────────────────────────────────────────────────
 
 interface SelectionState {
+  pageIndex: number;
   paraStart: number;
   paraEnd: number;
   wordText: string | null;
@@ -483,34 +484,71 @@ async function runPageMode(
         }
         // no-op if no selection
       } else if (typeof action === "object" && action !== null && action.type === "click") {
-        const { rows } = getTerminalSize();
-        const contentRows = rows - 3;
+        const { cols, rows } = getTerminalSize();
+        const contentRows = rows - 4;
         const lineIdx = action.row - 3;  // 0-based, header=2 rows
         if (lineIdx >= 0 && lineIdx < contentRows) {
-          const page = pages[currentPage];
+          // Determine which page and adjusted column (spread vs single)
+          const isSpread = cols >= SPREAD_MIN_COLS;
+          const GUTTER = 3;
+          const colWidth = Math.floor((cols - GUTTER) / 2);
+          let targetPageIdx = currentPage;
+          let adjustedCol = action.col - 1; // 0-based
+          if (isSpread) {
+            if (action.col <= colWidth) {
+              targetPageIdx = currentPage;
+              adjustedCol = action.col - 1;
+            } else if (action.col > colWidth + GUTTER) {
+              targetPageIdx = currentPage + 1;
+              adjustedCol = action.col - colWidth - GUTTER - 1;
+            } else {
+              // Gutter click — ignore
+              continue;
+            }
+          }
+
+          const page = pages[targetPageIdx];
           const lines = page?.lines ?? [];
           const groups = getParagraphGroups(lines);
           const para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
           if (para) {
-            const sameParaSelected = selection && selection.paraStart === para.start && selection.paraEnd === para.end;
+            const sameParaSelected = selection &&
+              selection.pageIndex === targetPageIdx &&
+              selection.paraStart === para.start &&
+              selection.paraEnd === para.end;
             if (sameParaSelected) {
-              // Second click on same paragraph: select word
+              // Second click on same paragraph: select or toggle word
               const ansiLine = lines[lineIdx] ?? "";
-              const w = wordAtColumn(ansiLine, action.col - 1); // col is 1-based
+              const w = wordAtColumn(ansiLine, adjustedCol);
               if (w) {
-                const found = findWordApprox(w.text, allWords, currentPage, pages.length);
-                selection = {
-                  ...selection!,
-                  wordText: w.text,
-                  wordIndex: found?.index ?? null,
-                  wordLine: lineIdx,
-                  wordColStart: w.start,
-                  wordColEnd: w.end,
-                };
+                const sameWord = selection!.wordLine === lineIdx &&
+                  selection!.wordColStart === w.start;
+                if (sameWord) {
+                  // Toggle off: go back to paragraph-only selection
+                  selection = {
+                    ...selection!,
+                    wordText: null,
+                    wordIndex: null,
+                    wordLine: null,
+                    wordColStart: null,
+                    wordColEnd: null,
+                  };
+                } else {
+                  const found = findWordApprox(w.text, allWords, targetPageIdx, pages.length);
+                  selection = {
+                    ...selection!,
+                    wordText: w.text,
+                    wordIndex: found?.index ?? null,
+                    wordLine: lineIdx,
+                    wordColStart: w.start,
+                    wordColEnd: w.end,
+                  };
+                }
               }
             } else {
-              // First click: select paragraph
+              // First click or different paragraph: select paragraph
               selection = {
+                pageIndex: targetPageIdx,
                 paraStart: para.start,
                 paraEnd: para.end,
                 wordText: null,
@@ -520,19 +558,22 @@ async function runPageMode(
                 wordColEnd: null,
               };
             }
-            // Update view selection state
-            view.updateState({
-              selection: selection ? {
-                paraStart: selection.paraStart,
-                paraEnd: selection.paraEnd,
-                wordLine: selection.wordLine,
-                wordColStart: selection.wordColStart,
-                wordColEnd: selection.wordColEnd,
-                wordText: selection.wordText,
-              } : null
-            });
-            view.render();
+          } else {
+            // Clicked outside any paragraph (blank line): deselect
+            selection = null;
           }
+          view.updateState({
+            selection: selection ? {
+              pageIndex: selection.pageIndex,
+              paraStart: selection.paraStart,
+              paraEnd: selection.paraEnd,
+              wordLine: selection.wordLine,
+              wordColStart: selection.wordColStart,
+              wordColEnd: selection.wordColEnd,
+              wordText: selection.wordText,
+            } : null
+          });
+          view.render();
         }
       }
       // 'command' and null — re-render or ignore
@@ -556,7 +597,7 @@ async function runScrollMode(
   let bookmarkCount = 0;
 
   const { rows } = getTerminalSize();
-  const contentRows = Math.max(1, rows - 3);
+  const contentRows = Math.max(1, rows - 4);
   const maxOffset = Math.max(0, allLines.length - contentRows);
 
   const view = new ScrollView({

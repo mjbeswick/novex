@@ -36,7 +36,7 @@ export class ScrollView {
   getProgress(): number {
     const { lines, offset } = this.state;
     const { rows } = getTerminalSize();
-    const contentRows = rows - 3;
+    const contentRows = rows - 4;
     const maxOffset = Math.max(0, lines.length - contentRows);
     if (maxOffset === 0) return 100;
     return Math.round((offset / maxOffset) * 100);
@@ -49,7 +49,7 @@ export class ScrollView {
 
     clearScreen();
 
-    const contentRows = rows - 3; // header + sep + hints
+    const contentRows = rows - 4; // header + sep + footer-sep + hints
 
     // ── Header (with status integrated) ───────────────────────────────────────
     const progress = this.getProgress();
@@ -73,7 +73,9 @@ export class ScrollView {
       process.stdout.write(t.text + padEnd(raw, cols) + ANSI.reset);
     }
 
-    // ── Hints ─────────────────────────────────────────────────────────────────
+    // ── Footer separator + hints ──────────────────────────────────────────────
+    moveTo(rows - 1, 1);
+    process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
     moveTo(rows, 1);
     const hint =
       t.dim +

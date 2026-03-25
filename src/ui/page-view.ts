@@ -3,6 +3,7 @@ import { ANSI, clearScreen, getTerminalSize, moveTo } from "./terminal";
 import { themes } from "./themes";
 
 export interface PageSelection {
+  pageIndex: number;          // which page the selection lives on
   paraStart: number;
   paraEnd: number;
   wordLine: number | null;    // absolute line index on page
@@ -146,16 +147,15 @@ export class PageView {
     moveTo(2, 1);
     process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
 
-    const contentRows = rows - 3;
+    const contentRows = rows - 4;
     const lines = pages[currentPage]?.lines ?? [];
     for (let i = 0; i < contentRows; i++) {
       moveTo(i + 3, 1);
-      const inSel = selection && i >= selection.paraStart && i <= selection.paraEnd;
+      const inSel = selection && selection.pageIndex === currentPage &&
+        i >= selection.paraStart && i <= selection.paraEnd;
       let lineStr = lines[i] ?? "";
       if (inSel) {
-        // Bold the whole line for paragraph selection
         lineStr = ANSI.bold + lineStr;
-        // Highlight selected word if on this line
         if (
           selection!.wordLine === i &&
           selection!.wordColStart !== null &&
@@ -167,7 +167,7 @@ export class PageView {
       process.stdout.write(t.text + padEnd(lineStr, cols) + ANSI.reset);
     }
 
-    // Hints row
+    // Footer separator + hints
     let hintsText: string;
     if (!selection) {
       hintsText = "[n]ext [p]rev [b]ookmark [s]peed [v]scroll [/]search [q]uit [?]help";
@@ -177,6 +177,8 @@ export class PageView {
       hintsText = "Para selected · [s]peed [b]ookmark [t]ts [esc]clear";
     }
 
+    moveTo(rows - 1, 1);
+    process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
     moveTo(rows, 1);
     process.stdout.write(
       t.dim + padEnd(hintsText, cols) + ANSI.reset
@@ -231,12 +233,13 @@ export class PageView {
     process.stdout.write(t.border + "─".repeat(colWidth) + gutterTop + "─".repeat(colWidth) + ANSI.reset);
 
     // ── Content rows ──────────────────────────────────────────────────────────
-    const contentRows = rows - 3;
+    const contentRows = rows - 4;
     for (let i = 0; i < contentRows; i++) {
       moveTo(i + 3, 1);
 
       // Left side with selection highlight
-      const inLeftSel = selection && i >= selection.paraStart && i <= selection.paraEnd;
+      const inLeftSel = selection && selection.pageIndex === leftIdx &&
+        i >= selection.paraStart && i <= selection.paraEnd;
       let leftLine = leftLines[i] ?? "";
       if (inLeftSel) {
         leftLine = ANSI.bold + leftLine;
@@ -249,14 +252,29 @@ export class PageView {
         }
       }
 
+      // Right side with selection highlight
+      const inRightSel = selection && selection.pageIndex === rightIdx &&
+        i >= selection.paraStart && i <= selection.paraEnd;
+      let rightLine = rightLines[i] ?? "";
+      if (inRightSel) {
+        rightLine = ANSI.bold + rightLine;
+        if (
+          selection!.wordLine === i &&
+          selection!.wordColStart !== null &&
+          selection!.wordColEnd !== null
+        ) {
+          rightLine = highlightWord(rightLine, selection!.wordColStart, selection!.wordColEnd);
+        }
+      }
+
       process.stdout.write(
         fitAnsi(t.text + leftLine, colWidth) +
         t.border + " │ " + ANSI.reset +
-        fitAnsi(t.text + (rightLines[i] ?? ""), colWidth)
+        fitAnsi(t.text + rightLine, colWidth)
       );
     }
 
-    // ── Key hints ─────────────────────────────────────────────────────────────
+    // ── Footer separator + key hints ──────────────────────────────────────────
     let hintsText: string;
     if (!selection) {
       hintsText = "[n]ext [p]rev [b]ookmark [s]peed [v]scroll [/]search [q]uit [?]help  — spread";
@@ -266,6 +284,9 @@ export class PageView {
       hintsText = "Para selected · [s]peed [b]ookmark [t]ts [esc]clear  — spread";
     }
 
+    const gutterBot = "─".repeat(Math.floor(GUTTER / 2)) + "┴" + "─".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
+    moveTo(rows - 1, 1);
+    process.stdout.write(t.border + "─".repeat(colWidth) + gutterBot + "─".repeat(colWidth) + ANSI.reset);
     moveTo(rows, 1);
     process.stdout.write(
       t.dim + padEnd(hintsText, cols) + ANSI.reset
