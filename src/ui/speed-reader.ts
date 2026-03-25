@@ -144,7 +144,7 @@ function buildSentenceLines(
         const idx = tok.lineOffset;
         return (
           t.dim + line.slice(0, idx) + ANSI.reset +
-          "\x1b[97m" + ANSI.bold + line.slice(idx, idx + wordText.length) + ANSI.reset +
+          "\x1b[4m" + line.slice(idx, idx + wordText.length) + ANSI.reset +
           t.dim + line.slice(idx + wordText.length) + ANSI.reset
         );
       }
