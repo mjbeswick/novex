@@ -1,0 +1,335 @@
+import type { Page, Theme } from "../types";
+import { ANSI, clearScreen, getTerminalSize, moveTo } from "./terminal";
+import { themes } from "./themes";
+
+export interface PageSelection {
+  paraStart: number;
+  paraEnd: number;
+  wordLine: number | null;    // absolute line index on page
+  wordColStart: number | null;
+  wordColEnd: number | null;
+  wordText: string | null;
+}
+
+export interface PageViewState {
+  pages: Page[];
+  currentPage: number;
+  theme: Theme;
+  lineWidth?: number;
+  bookmarkCount: number;
+  chapterTitle: string;
+  title: string;
+  selection: PageSelection | null;
+}
+
+/** Minimum terminal width to activate two-page spread layout. */
+export const SPREAD_MIN_COLS = 120;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** Pad or truncate a raw string (no embedded ANSI) to exactly `width` chars. */
+function padEnd(str: string, width: number): string {
+  if (str.length >= width) return str.slice(0, width);
+  return str + " ".repeat(width - str.length);
+}
+
+/** Strip ANSI sequences for visible-length calculations. */
+function visLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+/**
+ * Fit a string (possibly containing ANSI codes) into exactly `width` visible
+ * columns: truncate long lines (preserving escape sequences) and pad short
+ * ones. Always appends a reset so the caller's next colour is not polluted.
+ */
+function fitAnsi(str: string, width: number): string {
+  let visible = 0;
+  let result = "";
+  let i = 0;
+
+  while (i < str.length) {
+    // Consume an ANSI CSI escape sequence without counting it as visible
+    if (str.charCodeAt(i) === 0x1b && str[i + 1] === "[") {
+      const end = str.indexOf("m", i + 2);
+      if (end !== -1) {
+        if (visible < width) result += str.slice(i, end + 1); // keep if still within
+        i = end + 1;
+        continue;
+      }
+    }
+    if (visible < width) {
+      result += str[i];
+      visible++;
+    }
+    i++;
+  }
+
+  if (visible < width) result += " ".repeat(width - visible);
+  return result + ANSI.reset;
+}
+
+/**
+ * Insert bold+underline at colStart and reset+resume at colEnd+1 in
+ * visible-char terms (ANSI-aware).
+ */
+function highlightWord(line: string, colStart: number, colEnd: number): string {
+  let visible = 0;
+  let result = "";
+  let i = 0;
+  let opened = false;
+  while (i < line.length) {
+    if (line.charCodeAt(i) === 0x1b && line[i + 1] === "[") {
+      const end = line.indexOf("m", i + 2);
+      if (end !== -1) { result += line.slice(i, end + 1); i = end + 1; continue; }
+    }
+    if (!opened && visible === colStart) { result += "\x1b[1m\x1b[4m"; opened = true; }
+    if (opened && visible === colEnd + 1) { result += ANSI.reset; opened = false; }
+    result += line[i]; visible++; i++;
+  }
+  if (opened) result += ANSI.reset;
+  return result;
+}
+
+// ── PageView ───────────────────────────────────────────────────────────────────
+
+export class PageView {
+  private state: PageViewState;
+
+  constructor(state: PageViewState) {
+    this.state = { ...state };
+  }
+
+  updateState(state: Partial<PageViewState>): void {
+    this.state = { ...this.state, ...state };
+  }
+
+  /** Returns true when the current terminal is wide enough for spread layout. */
+  isSpread(): boolean {
+    return getTerminalSize().cols >= SPREAD_MIN_COLS;
+  }
+
+  render(): void {
+    const { cols, rows } = getTerminalSize();
+    if (cols >= SPREAD_MIN_COLS) {
+      this.renderSpread(cols, rows);
+    } else {
+      this.renderSingle(cols, rows);
+    }
+  }
+
+  // ── Single-page layout ──────────────────────────────────────────────────────
+
+  private renderSingle(cols: number, rows: number): void {
+    const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
+    const t = themes[theme];
+
+    clearScreen();
+
+    const totalPages = pages.length;
+    const percent = totalPages > 1 ? Math.round((currentPage / (totalPages - 1)) * 100) : 100;
+    const statusRight = `${percent}% · pg ${currentPage + 1}/${totalPages}`;
+    // Left: "title · chapter", right-aligned: status
+    const leftLabel = title !== chapterTitle
+      ? `${title} · ${chapterTitle}`
+      : title;
+    const gap = cols - visLen(leftLabel) - visLen(statusRight);
+    const headerLine = leftLabel + " ".repeat(Math.max(gap, 1)) + statusRight;
+
+    moveTo(1, 1);
+    process.stdout.write(
+      t.accent + ANSI.bold +
+      headerLine.slice(0, cols) +
+      ANSI.reset
+    );
+
+    moveTo(2, 1);
+    process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
+
+    const contentRows = rows - 3;
+    const lines = pages[currentPage]?.lines ?? [];
+    for (let i = 0; i < contentRows; i++) {
+      moveTo(i + 3, 1);
+      const inSel = selection && i >= selection.paraStart && i <= selection.paraEnd;
+      let lineStr = lines[i] ?? "";
+      if (inSel) {
+        // Bold the whole line for paragraph selection
+        lineStr = ANSI.bold + lineStr;
+        // Highlight selected word if on this line
+        if (
+          selection!.wordLine === i &&
+          selection!.wordColStart !== null &&
+          selection!.wordColEnd !== null
+        ) {
+          lineStr = highlightWord(lineStr, selection!.wordColStart, selection!.wordColEnd);
+        }
+      }
+      process.stdout.write(t.text + padEnd(lineStr, cols) + ANSI.reset);
+    }
+
+    // Hints row
+    let hintsText: string;
+    if (!selection) {
+      hintsText = "[n]ext [p]rev [b]ookmark [s]peed [v]scroll [/]search [q]uit [?]help";
+    } else if (selection.wordText) {
+      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [t]ts [esc]clear`;
+    } else {
+      hintsText = "Para selected · [s]peed [b]ookmark [t]ts [esc]clear";
+    }
+
+    moveTo(rows, 1);
+    process.stdout.write(
+      t.dim + padEnd(hintsText, cols) + ANSI.reset
+    );
+  }
+
+  // ── Two-page spread layout ──────────────────────────────────────────────────
+
+  private renderSpread(cols: number, rows: number): void {
+    const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
+    const t = themes[theme];
+
+    clearScreen();
+
+    const totalPages = pages.length;
+    const GUTTER = 3; // " │ "
+    const colWidth = Math.floor((cols - GUTTER) / 2);
+
+    const leftIdx  = currentPage;
+    const rightIdx = currentPage + 1;
+    const leftPage  = pages[leftIdx];
+    const rightPage = pages[rightIdx];
+
+    const leftLines  = leftPage?.lines  ?? [];
+    const rightLines = rightPage?.lines ?? [];
+
+    // ── Chapter titles for each page ─────────────────────────────────────────
+    const leftTitle  = leftPage  ? (this.getChapterTitle(leftIdx)  ?? chapterTitle) : chapterTitle;
+    const rightTitle = rightPage ? (this.getChapterTitle(rightIdx) ?? chapterTitle) : "";
+
+    // ── Header row (with status integrated) ──────────────────────────────────
+    const percent = totalPages > 1 ? Math.round((leftIdx / (totalPages - 1)) * 100) : 100;
+    const statusRight = `${percent}% · pg ${leftIdx + 1}${rightPage ? `–${rightIdx + 1}` : ""}/${totalPages}`;
+
+    // Left half header: "title · chapter"
+    const leftLabel = title !== leftTitle ? `${title} · ${leftTitle}` : title;
+    const leftHeader = t.accent + ANSI.bold + fitAnsi(leftLabel, colWidth) + ANSI.reset;
+
+    // Right half header: chapter | status right-aligned
+    const rightGap = colWidth - visLen(rightTitle) - visLen(statusRight);
+    const rightHeaderText = rightTitle + " ".repeat(Math.max(rightGap, 1)) + statusRight;
+    const rightHeader = rightPage
+      ? t.accent + ANSI.bold + rightHeaderText.slice(0, colWidth) + ANSI.reset
+      : " ".repeat(colWidth);
+
+    moveTo(1, 1);
+    process.stdout.write(leftHeader + " ".repeat(GUTTER) + rightHeader);
+
+    // ── Top separator ─────────────────────────────────────────────────────────
+    const gutterTop = "─".repeat(Math.floor(GUTTER / 2)) + "┬" + "─".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
+    moveTo(2, 1);
+    process.stdout.write(t.border + "─".repeat(colWidth) + gutterTop + "─".repeat(colWidth) + ANSI.reset);
+
+    // ── Content rows ──────────────────────────────────────────────────────────
+    const contentRows = rows - 3;
+    for (let i = 0; i < contentRows; i++) {
+      moveTo(i + 3, 1);
+
+      // Left side with selection highlight
+      const inLeftSel = selection && i >= selection.paraStart && i <= selection.paraEnd;
+      let leftLine = leftLines[i] ?? "";
+      if (inLeftSel) {
+        leftLine = ANSI.bold + leftLine;
+        if (
+          selection!.wordLine === i &&
+          selection!.wordColStart !== null &&
+          selection!.wordColEnd !== null
+        ) {
+          leftLine = highlightWord(leftLine, selection!.wordColStart, selection!.wordColEnd);
+        }
+      }
+
+      process.stdout.write(
+        fitAnsi(t.text + leftLine, colWidth) +
+        t.border + " │ " + ANSI.reset +
+        fitAnsi(t.text + (rightLines[i] ?? ""), colWidth)
+      );
+    }
+
+    // ── Key hints ─────────────────────────────────────────────────────────────
+    let hintsText: string;
+    if (!selection) {
+      hintsText = "[n]ext [p]rev [b]ookmark [s]peed [v]scroll [/]search [q]uit [?]help  — spread";
+    } else if (selection.wordText) {
+      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [t]ts [esc]clear  — spread`;
+    } else {
+      hintsText = "Para selected · [s]peed [b]ookmark [t]ts [esc]clear  — spread";
+    }
+
+    moveTo(rows, 1);
+    process.stdout.write(
+      t.dim + padEnd(hintsText, cols) + ANSI.reset
+    );
+  }
+
+  private getChapterTitle(_pageIdx: number): string | undefined {
+    // Caller passes chapterTitle; this is a placeholder for richer lookup if available
+    return this.state.chapterTitle;
+  }
+
+  // ── Key handling ───────────────────────────────────────────────────────────
+
+  handleKey(
+    key: string
+  ):
+    | "next"
+    | "prev"
+    | "bookmark"
+    | "speed"
+    | "scroll"
+    | "quit"
+    | "help"
+    | "search"
+    | "command"
+    | "escape"
+    | "tts"
+    | { type: "click"; row: number; col: number }
+    | null {
+    if (key.startsWith("mouse:")) {
+      const parts = key.split(":");
+      const row = parseInt(parts[1] ?? "0");
+      const col = parseInt(parts[2] ?? "0");
+      return { type: "click", row, col };
+    }
+    switch (key) {
+      case "n":
+      case "right":
+      case "down":
+        return "next";
+      case "p":
+      case "left":
+      case "up":
+        return "prev";
+      case "b":
+        return "bookmark";
+      case "s":
+        return "speed";
+      case "v":
+        return "scroll";
+      case "q":
+        return "quit";
+      case "?":
+        return "help";
+      case "/":
+        return "search";
+      case ":":
+        return "command";
+      case "escape":
+        return "escape";
+      case "t":
+        return "tts";
+      default:
+        return null;
+    }
+  }
+}
