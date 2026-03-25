@@ -2,7 +2,7 @@ import type { ParsedContent, CLIOptions, ReadingMode, Position } from "./types.t
 import { parsePosition, positionToString } from "./types.ts";
 import { buildPages, chunkWords } from "./pagination.ts";
 import { extractWords } from "./normalizer.ts";
-import { addBookmark, updateLastPosition } from "./store.ts";
+import { addBookmark, deleteBookmark, getFileState, updateLastPosition } from "./store.ts";
 import {
   hideCursor,
   showCursor,
@@ -11,6 +11,8 @@ import {
   readKey,
   getTerminalSize,
   clearScreen,
+  enterAltScreen,
+  exitAltScreen,
   enableMouseTracking,
   disableMouseTracking,
 } from "./ui/index.ts";
@@ -19,6 +21,7 @@ import {
   ScrollView,
   SpeedReader,
   showHelp,
+  showBookmarks,
   searchContent,
   SearchBar,
   SPREAD_MIN_COLS,
@@ -28,6 +31,12 @@ import {
 
 function wpmToMs(wpm: number): number {
   return Math.round(60000 / wpm);
+}
+
+/** Returns the usable content width per column, accounting for spread layout. */
+function contentCols(cols: number): number {
+  if (cols >= SPREAD_MIN_COLS) return Math.floor((cols - 3) / 2);
+  return cols;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -208,14 +217,19 @@ export async function runSession(
   options: CLIOptions,
   initialPosition?: string
 ): Promise<void> {
-  const { cols, rows } = getTerminalSize();
+  let { cols, rows } = getTerminalSize();
 
   // Build pages
-  const pages = buildPages(content, cols, rows, options.lineWidth, options.theme);
+  let pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
 
   // Build words for speed/rsvp
   const words = extractWords(content.text);
   const chunks = chunkWords(words, options.chunk);
+
+  // Track terminal resize
+  let resizePending = false;
+  const onResize = () => { resizePending = true; };
+  process.stdout.on("resize", onResize);
 
   // Parse initial position
   let startPage = 0;
@@ -236,8 +250,9 @@ export async function runSession(
   let currentScroll = startScroll;
 
   // Flatten all page lines for scroll view
-  const allLines: string[] = pages.flatMap((p) => p.lines);
+  let allLines: string[] = pages.flatMap((p) => p.lines);
 
+  enterAltScreen();
   hideCursor();
   enableRawMode();
 
@@ -245,6 +260,14 @@ export async function runSession(
     let running = true;
 
     while (running) {
+      // Rebuild pages if the terminal was resized
+      if (resizePending) {
+        resizePending = false;
+        ({ cols, rows } = getTerminalSize());
+        pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
+        allLines = pages.flatMap((p) => p.lines);
+      }
+
       switch (currentMode) {
         case "page":
           currentPage = await runPageMode(
@@ -253,7 +276,8 @@ export async function runSession(
             () => { running = false; },
             words,
             chunks,
-            (idx) => { currentWord = idx; }
+            (idx) => { currentWord = idx; },
+            () => resizePending
           );
           break;
 
@@ -261,7 +285,8 @@ export async function runSession(
           currentScroll = await runScrollMode(
             content, options, allLines, currentScroll,
             (newMode) => { currentMode = newMode; },
-            () => { running = false; }
+            () => { running = false; },
+            () => resizePending
           );
           break;
 
@@ -269,7 +294,8 @@ export async function runSession(
           currentWord = await runSpeedMode(
             content, options, chunks, words, currentWord,
             (newMode) => { currentMode = newMode; },
-            () => { running = false; }
+            () => { running = false; },
+            () => resizePending
           );
           break;
 
@@ -291,9 +317,10 @@ export async function runSession(
       await updateLastPosition(content.hash, positionToString(finalPos)).catch(() => {});
     }
   } finally {
-    clearScreen();
+    process.stdout.off("resize", onResize);
     showCursor();
     disableRawMode();
+    exitAltScreen();
   }
 }
 
@@ -363,11 +390,15 @@ async function runPageMode(
   quit: () => void,
   allWords: ReturnType<typeof extractWords>,
   _chunks: ReturnType<typeof chunkWords>,
-  setCurrentWord: (idx: number) => void
+  setCurrentWord: (idx: number) => void,
+  isResizePending: () => boolean
 ): Promise<number> {
   let currentPage = startPage;
-  let bookmarkCount = 0;
   let selection: SelectionState | null = null;
+
+  // Load bookmarks once; keep a local mirror for quick access
+  const initState = await getFileState(content.hash).catch(() => null);
+  let localBookmarks: import("./types.ts").Bookmark[] = initState?.bookmarks ?? [];
 
   const getChapterTitle = () => {
     const page = pages[currentPage];
@@ -375,15 +406,53 @@ async function runPageMode(
     return content.chapters[page.chapterIndex]?.title ?? content.title;
   };
 
+  /** Return 0-based line indices within pageIdx that carry a bookmark marker. */
+  function getBookmarkedLines(pageIdx: number): number[] {
+    const set = new Set<number>();
+    const pageLines = pages[pageIdx]?.lines ?? [];
+    for (const bm of localBookmarks) {
+      const pos = parsePosition(bm.position);
+      if (pos.type === "page" && pos.page === pageIdx) {
+        set.add(0);
+      } else if (pos.type === "word") {
+        const approxPage = Math.round(pos.index / Math.max(allWords.length - 1, 1) * (pages.length - 1));
+        if (Math.abs(approxPage - pageIdx) <= 1) {
+          const word = allWords[pos.index];
+          if (word) {
+            const escaped = word.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const re = new RegExp(`(?:^|\\s)${escaped}(?:\\s|$|[.,;!?:])`, "i");
+            let found = false;
+            for (let li = 0; li < pageLines.length; li++) {
+              if (re.test((pageLines[li] ?? "").replace(/\x1b\[[0-9;]*m/g, ""))) {
+                set.add(li); found = true; break;
+              }
+            }
+            if (!found && approxPage === pageIdx) set.add(0);
+          }
+        }
+      }
+    }
+    return [...set];
+  }
+
+  function bookmarkLineState() {
+    const isSpread = getTerminalSize().cols >= SPREAD_MIN_COLS;
+    return {
+      bookmarkedLines: getBookmarkedLines(currentPage),
+      bookmarkedLinesRight: isSpread ? getBookmarkedLines(currentPage + 1) : [] as number[],
+    };
+  }
+
   const view = new PageView({
     pages,
     currentPage,
     theme: options.theme,
     lineWidth: options.lineWidth,
-    bookmarkCount,
+    bookmarkCount: localBookmarks.length,
     chapterTitle: getChapterTitle(),
     title: content.title,
     selection: null,
+    ...bookmarkLineState(),
   });
 
   enableMouseTracking();
@@ -391,6 +460,7 @@ async function runPageMode(
 
   try {
     while (true) {
+      if (isResizePending()) return currentPage;
       const key = await readKey();
       const action = view.handleKey(key);
 
@@ -403,7 +473,7 @@ async function runPageMode(
         currentPage = clamp(currentPage + step, 0, max);
         if (getTerminalSize().cols >= SPREAD_MIN_COLS) currentPage -= currentPage % 2; // snap even
         selection = null;
-        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null });
+        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
         view.render();
         if (!options.noSave) {
           updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
@@ -413,37 +483,52 @@ async function runPageMode(
         currentPage = clamp(currentPage - step, 0, pages.length - 1);
         if (getTerminalSize().cols >= SPREAD_MIN_COLS) currentPage -= currentPage % 2;
         selection = null;
-        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null });
+        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
         view.render();
         if (!options.noSave) {
           updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
         }
       } else if (action === "bookmark") {
-        let pos: ReturnType<typeof positionToString>;
-        if (selection?.wordIndex != null) {
-          pos = positionToString({ type: "word", index: selection.wordIndex });
+        let pos: string;
+        let note = "";
+        if (selection?.wordText) {
+          pos = positionToString({ type: "word", index: selection.wordIndex ?? 0 });
+          note = `"${selection.wordText}"`;
+        } else if (selection) {
+          pos = positionToString({ type: "page", page: selection.pageIndex });
+          const firstLine = (pages[selection.pageIndex]?.lines[selection.paraStart] ?? "")
+            .replace(/\x1b\[[0-9;]*m/g, "").trim();
+          note = firstLine.length > 40 ? firstLine.slice(0, 40) + "…" : firstLine;
         } else {
           pos = positionToString({ type: "page", page: currentPage });
         }
-        await addBookmark(content.hash, {
-          position: pos,
-          note: "",
-          timestamp: new Date().toISOString(),
-        }).catch(() => {});
-        bookmarkCount++;
-        view.updateState({ bookmarkCount });
+        const existingIdx = localBookmarks.findIndex(bm => bm.position === pos);
+        if (existingIdx >= 0) {
+          await deleteBookmark(content.hash, existingIdx).catch(() => {});
+          localBookmarks.splice(existingIdx, 1);
+        } else {
+          const newBm = { position: pos, note, timestamp: new Date().toISOString() };
+          await addBookmark(content.hash, newBm).catch(() => {});
+          localBookmarks.push(newBm);
+        }
+        view.updateState({ bookmarkCount: localBookmarks.length, ...bookmarkLineState() });
         view.render();
       } else if (action === "speed") {
         if (selection?.wordIndex != null) {
           setCurrentWord(selection.wordIndex);
         } else if (selection != null) {
-          // Paragraph selected: find approx first word of para
-          const page = pages[currentPage];
-          const paraFirstLine = page?.lines[selection.paraStart] ?? "";
-          const w = wordAtColumn(paraFirstLine, 0);
-          if (w) {
-            const found = findWordApprox(w.text, allWords, currentPage, pages.length);
-            if (found) setCurrentWord(found.index);
+          // Paragraph selected: scan lines of the para for the first matchable word.
+          // Use selection.pageIndex (not currentPage) so spread-mode right-page works.
+          const selPage = pages[selection.pageIndex];
+          const selLines = selPage?.lines ?? [];
+          outer: for (let li = selection.paraStart; li <= Math.min(selection.paraEnd, selection.paraStart + 3); li++) {
+            const stripped = (selLines[li] ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+            const re = /\S+/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(stripped)) !== null) {
+              const found = findWordApprox(m[0], allWords, selection.pageIndex, pages.length);
+              if (found) { setCurrentWord(found.index); break outer; }
+            }
           }
         }
         switchMode("speed");
@@ -464,7 +549,7 @@ async function runPageMode(
           if (results.length > 0) {
             currentPage = results[0].pageIndex;
             selection = null;
-            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null });
+            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
           }
         }
         view.render();
@@ -483,6 +568,31 @@ async function runPageMode(
           }
         }
         // no-op if no selection
+      } else if (action === "bookmarks") {
+        const position = await showBookmarks(localBookmarks, options.theme, async (idx) => {
+          await deleteBookmark(content.hash, idx).catch(() => {});
+          localBookmarks.splice(idx, 1);
+        });
+        // Reload from store to ensure consistency after any deletions
+        const updatedState = await getFileState(content.hash).catch(() => null);
+        localBookmarks = updatedState?.bookmarks ?? [];
+        if (position) {
+          const pos = parsePosition(position);
+          if (pos.type === "page") {
+            currentPage = clamp(pos.page, 0, pages.length - 1);
+            selection = null;
+            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
+          } else if (pos.type === "word") {
+            setCurrentWord(pos.index);
+            switchMode("speed");
+            return currentPage;
+          } else if (pos.type === "scroll") {
+            switchMode("scroll");
+            return currentPage;
+          }
+        }
+        view.updateState({ bookmarkCount: localBookmarks.length, ...bookmarkLineState() });
+        view.render();
       } else if (typeof action === "object" && action !== null && action.type === "click") {
         const { cols, rows } = getTerminalSize();
         const contentRows = rows - 4;
@@ -591,7 +701,8 @@ async function runScrollMode(
   allLines: string[],
   startOffset: number,
   switchMode: (m: ReadingMode) => void,
-  quit: () => void
+  quit: () => void,
+  isResizePending: () => boolean
 ): Promise<number> {
   let offset = startOffset;
   let bookmarkCount = 0;
@@ -612,6 +723,7 @@ async function runScrollMode(
   view.render();
 
   while (true) {
+    if (isResizePending()) return offset;
     const key = await readKey();
     const action = view.handleKey(key);
 
@@ -662,9 +774,6 @@ async function runScrollMode(
     } else if (action === "speed") {
       switchMode("speed");
       return offset;
-    } else if (action === "quit") {
-      quit();
-      return offset;
     } else if (action === "help") {
       await showHelp("scroll", options.theme);
       view.render();
@@ -681,7 +790,8 @@ async function runSpeedMode(
   words: ReturnType<typeof extractWords>,
   startWord: number,
   switchMode: (m: ReadingMode) => void,
-  quit: () => void
+  quit: () => void,
+  isResizePending: () => boolean
 ): Promise<number> {
   if (initialChunks.length === 0) {
     quit();
@@ -745,6 +855,7 @@ async function runSpeedMode(
   syncTts(); // speak first sentence immediately
 
   while (true) {
+    if (isResizePending()) break;
     if (paused) {
       // Blocked waiting for keypress
       const key = await readKey();
