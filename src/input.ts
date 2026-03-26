@@ -139,11 +139,14 @@ export async function browseBooksDirectory(): Promise<string | null> {
   try {
     const dir = Bun.file(booksDir);
     if (!(await dir.exists())) {
-      process.stdout.write(`Books directory not found: ${booksDir}\n`);
+      process.stderr.write(`\nBooks directory not found: ${booksDir}\n`);
+      await new Promise(r => setTimeout(r, 1500)); // Brief pause to show message
       return null;
     }
-  } catch {
-    process.stdout.write(`Error accessing books directory: ${booksDir}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`\nError accessing books directory: ${msg}\n`);
+    await new Promise(r => setTimeout(r, 1500));
     return null;
   }
 
@@ -151,14 +154,22 @@ export async function browseBooksDirectory(): Promise<string | null> {
   const glob = new Bun.Glob(`**/*.{epub,docx,fb2,md,markdown,txt,html,htm}`);
   const files: string[] = [];
 
-  for await (const file of glob.scan({ cwd: booksDir, onlyFiles: true })) {
-    files.push(file);
+  try {
+    for await (const file of glob.scan({ cwd: booksDir, onlyFiles: true })) {
+      files.push(file);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`\nError scanning directory: ${msg}\n`);
+    await new Promise(r => setTimeout(r, 1500));
+    return null;
   }
 
   files.sort();
 
   if (files.length === 0) {
-    process.stdout.write(`No readable files found in ${booksDir}\n`);
+    process.stderr.write(`\nNo readable files found in ${booksDir}\n`);
+    await new Promise(r => setTimeout(r, 1500));
     return null;
   }
 

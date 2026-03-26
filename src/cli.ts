@@ -110,14 +110,15 @@ program
           showCursor();
           disableRawMode();
 
-          const newBookPath = await browseBooksDirectory();
+          try {
+            const newBookPath = await browseBooksDirectory();
 
-          enableRawMode();
-          hideCursor();
-          enterAltScreen();
+            enableRawMode();
+            hideCursor();
+            enterAltScreen();
 
-          if (newBookPath) {
-            const { buffer, source } = await readFromFile(newBookPath);
+            if (newBookPath) {
+              const { buffer, source } = await readFromFile(newBookPath);
             const format = detectFormat(source, buffer);
             const content = await convertToContent(source, buffer, format);
             const options: CLIOptions = {
@@ -143,6 +144,13 @@ program
               books = updatedBooks;
             }
 
+            enableRawMode();
+            hideCursor();
+            enterAltScreen();
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`\nError during browse: ${msg}\n`);
             enableRawMode();
             hideCursor();
             enterAltScreen();
@@ -280,10 +288,15 @@ program
               showCursor();
               disableRawMode();
 
-              const newBookPath = await browseBooksDirectory();
+              try {
+                const newBookPath = await browseBooksDirectory();
 
-              if (newBookPath) {
-                ({ buffer, source } = await readFromFile(newBookPath));
+                if (newBookPath) {
+                  ({ buffer, source } = await readFromFile(newBookPath));
+                }
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                process.stderr.write(`\nError during browse: ${msg}\n`);
               }
 
               enableRawMode();
