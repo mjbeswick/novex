@@ -86,6 +86,8 @@ export interface FileState {
   bookmarks: Bookmark[];
   lastPosition: string;
   lastRead: string;
+  source: string;
+  title: string;
 }
 
 export interface HistoryStore {

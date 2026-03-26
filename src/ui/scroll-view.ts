@@ -1,6 +1,7 @@
 import type { Theme } from "../types";
 import { ANSI, clearScreen, getTerminalSize, moveTo } from "./terminal";
 import { themes } from "./themes";
+import type { ColorTheme } from "./themes";
 
 export interface ScrollViewState {
   lines: string[];
@@ -17,9 +18,21 @@ function progressBar(percent: number, width: number): string {
   return "━".repeat(filled) + "─".repeat(empty);
 }
 
+function formatHints(text: string, t: ColorTheme): string {
+  return text.replace(/\[([^\]]+)\](\w*)/g, (_m, key: string, rest: string) => {
+    const sep = (key.length === 1 && /[a-zA-Z]/.test(key)) ? "" : (rest ? " " : "");
+    return `${ANSI.reset}${t.accent}${ANSI.bold}${key}${ANSI.reset}${t.dim}${sep}${rest}`;
+  });
+}
+
+function visLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
 function padEnd(str: string, width: number): string {
-  if (str.length >= width) return str.slice(0, width);
-  return str + " ".repeat(width - str.length);
+  const v = visLen(str);
+  if (v >= width) return str;
+  return str + " ".repeat(width - v);
 }
 
 export class ScrollView {
@@ -78,10 +91,8 @@ export class ScrollView {
     process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
     moveTo(rows, 1);
     const hint =
-      t.dim +
-      "[↑][↓] scroll | [PgUp][PgDn] page | [b]ookmark [p]age [s]peed [q]uit [?]help" +
-      ANSI.reset;
-    process.stdout.write(padEnd(hint, cols));
+      t.dim + formatHints("[↑][↓] scroll | [PgUp]/[PgDn] page | [b]ookmark [p]age [s]peed [?]help", t) + ANSI.reset;
+    process.stdout.write(hint);
   }
 
   handleKey(
@@ -94,7 +105,6 @@ export class ScrollView {
     | "bookmark"
     | "page-mode"
     | "speed"
-    | "quit"
     | "help"
     | null {
     switch (key) {
@@ -112,11 +122,10 @@ export class ScrollView {
       case "b":
         return "bookmark";
       case "p":
+      case "q":
         return "page-mode";
       case "s":
         return "speed";
-      case "q":
-        return "quit";
       case "?":
         return "help";
       default:

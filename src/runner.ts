@@ -314,7 +314,7 @@ export async function runSession(
       } else {
         finalPos = { type: "page", page: currentPage };
       }
-      await updateLastPosition(content.hash, positionToString(finalPos)).catch(() => {});
+      await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title).catch(() => {});
     }
   } finally {
     process.stdout.off("resize", onResize);
@@ -508,7 +508,7 @@ async function runPageMode(
           localBookmarks.splice(existingIdx, 1);
         } else {
           const newBm = { position: pos, note, timestamp: new Date().toISOString() };
-          await addBookmark(content.hash, newBm).catch(() => {});
+          await addBookmark(content.hash, newBm, content.source, content.title).catch(() => {});
           localBookmarks.push(newBm);
         }
         view.updateState({ bookmarkCount: localBookmarks.length, ...bookmarkLineState() });
@@ -764,7 +764,7 @@ async function runScrollMode(
         position: positionToString({ type: "scroll", offset }),
         note: "",
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      }, content.source, content.title).catch(() => {});
       bookmarkCount++;
       view.updateState({ bookmarkCount });
       view.render();

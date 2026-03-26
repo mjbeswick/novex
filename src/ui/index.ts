@@ -1,5 +1,6 @@
 // Low-level terminal helpers & ANSI codes
-export { ANSI, clearScreen, hideCursor, showCursor, moveTo, clearLine,
+export { ANSI, clearScreen, enterAltScreen, exitAltScreen,
+         hideCursor, showCursor, moveTo, clearLine,
          getTerminalSize, enableRawMode, disableRawMode, readKey,
          enableMouseTracking, disableMouseTracking } from "./terminal";
 
@@ -21,5 +22,7 @@ export { ModeSelector } from "./mode-selector";
 
 // Overlays / utilities
 export { showHelp } from "./help";
+export { showBookmarks } from "./bookmark-list";
+export { showBooksList } from "./books-list";
 export { searchContent, highlightMatch, SearchBar } from "./search";
 export type { SearchResult } from "./search";

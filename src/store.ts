@@ -65,12 +65,38 @@ export async function saveFileState(
 }
 
 /**
+ * Initializes or gets a FileState entry with source and title.
+ */
+export async function initializeFileState(
+  hash: string,
+  source: string,
+  title: string
+): Promise<FileState> {
+  const store = await loadHistory();
+
+  if (!store[hash]) {
+    store[hash] = {
+      bookmarks: [],
+      lastPosition: "",
+      lastRead: new Date().toISOString(),
+      source,
+      title,
+    };
+    await saveHistory(store);
+  }
+
+  return store[hash];
+}
+
+/**
  * Adds a bookmark to the FileState for the given hash.
  * Creates a new FileState entry if one does not already exist.
  */
 export async function addBookmark(
   hash: string,
-  bookmark: Bookmark
+  bookmark: Bookmark,
+  source?: string,
+  title?: string
 ): Promise<void> {
   const store = await loadHistory();
 
@@ -79,10 +105,44 @@ export async function addBookmark(
       bookmarks: [],
       lastPosition: "",
       lastRead: new Date().toISOString(),
+      source: source ?? "",
+      title: title ?? "",
     };
   }
 
   store[hash].bookmarks.push(bookmark);
+  await saveHistory(store);
+}
+
+/**
+ * Deletes the bookmark at the given index for the given hash.
+ */
+export async function deleteBookmark(hash: string, index: number): Promise<void> {
+  const store = await loadHistory();
+  if (store[hash]) {
+    store[hash].bookmarks.splice(index, 1);
+    await saveHistory(store);
+  }
+}
+
+/**
+ * Lists all books (file entries) in the history with their hashes.
+ * Returns entries sorted by lastRead (most recent first).
+ */
+export async function listBooks(): Promise<Array<{ hash: string; state: FileState }>> {
+  const store = await loadHistory();
+  const entries = Object.entries(store)
+    .map(([hash, state]) => ({ hash, state }))
+    .sort((a, b) => new Date(b.state.lastRead).getTime() - new Date(a.state.lastRead).getTime());
+  return entries;
+}
+
+/**
+ * Deletes a book (file entry) from the history by hash.
+ */
+export async function deleteBook(hash: string): Promise<void> {
+  const store = await loadHistory();
+  delete store[hash];
   await saveHistory(store);
 }
 
@@ -92,7 +152,9 @@ export async function addBookmark(
  */
 export async function updateLastPosition(
   hash: string,
-  position: string
+  position: string,
+  source?: string,
+  title?: string
 ): Promise<void> {
   const store = await loadHistory();
 
@@ -101,10 +163,14 @@ export async function updateLastPosition(
       bookmarks: [],
       lastPosition: position,
       lastRead: new Date().toISOString(),
+      source: source ?? "",
+      title: title ?? "",
     };
   } else {
     store[hash].lastPosition = position;
     store[hash].lastRead = new Date().toISOString();
+    if (source) store[hash].source = source;
+    if (title) store[hash].title = title;
   }
 
   await saveHistory(store);

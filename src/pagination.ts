@@ -411,7 +411,7 @@ export function buildPages(
   lineWidth?: number,
   theme: Theme = "dark"
 ): Page[] {
-  const effectiveWidth = lineWidth ?? Math.min(cols, 80);
+  const effectiveWidth = Math.min(lineWidth ?? 80, cols);
   // Reserve rows for header + separator + status + hints
   const pageHeight = Math.max(1, rows - 4);
 

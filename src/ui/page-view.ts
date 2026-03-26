@@ -1,6 +1,7 @@
 import type { Page, Theme } from "../types";
 import { ANSI, clearScreen, getTerminalSize, moveTo } from "./terminal";
 import { themes } from "./themes";
+import type { ColorTheme } from "./themes";
 
 export interface PageSelection {
   pageIndex: number;          // which page the selection lives on
@@ -21,6 +22,10 @@ export interface PageViewState {
   chapterTitle: string;
   title: string;
   selection: PageSelection | null;
+  /** 0-based line indices within the current (left) page that have a bookmark marker. */
+  bookmarkedLines: number[];
+  /** 0-based line indices within the right page (spread mode only) that have a bookmark marker. */
+  bookmarkedLinesRight: number[];
 }
 
 /** Minimum terminal width to activate two-page spread layout. */
@@ -85,11 +90,24 @@ function highlightWord(line: string, colStart: number, colEnd: number): string {
       if (end !== -1) { result += line.slice(i, end + 1); i = end + 1; continue; }
     }
     if (!opened && visible === colStart) { result += "\x1b[1m\x1b[4m"; opened = true; }
-    if (opened && visible === colEnd + 1) { result += ANSI.reset; opened = false; }
+    if (opened && visible === colEnd + 1) { result += "\x1b[22m\x1b[24m"; opened = false; }
     result += line[i]; visible++; i++;
   }
   if (opened) result += ANSI.reset;
   return result;
+}
+
+/**
+ * Style hint strings: remove brackets, colour the key in accent+bold, action
+ * text stays dim. Single alpha keys are inlined into the following word
+ * (e.g. "[n]ext" → "next" with n highlighted); symbol/multi-char keys get a
+ * space separator (e.g. "[esc]clear" → "esc clear").
+ */
+function formatHints(text: string, t: ColorTheme): string {
+  return text.replace(/\[([^\]]+)\](\w*)/g, (_m, key: string, rest: string) => {
+    const sep = (key.length === 1 && /[a-zA-Z]/.test(key)) ? "" : (rest ? " " : "");
+    return `${ANSI.reset}${t.accent}${ANSI.bold}${key}${ANSI.reset}${t.dim}${sep}${rest}`;
+  });
 }
 
 // ── PageView ───────────────────────────────────────────────────────────────────
@@ -154,34 +172,43 @@ export class PageView {
       const inSel = selection && selection.pageIndex === currentPage &&
         i >= selection.paraStart && i <= selection.paraEnd;
       let lineStr = lines[i] ?? "";
-      if (inSel) {
-        lineStr = ANSI.bold + lineStr;
-        if (
+      if (inSel &&
           selection!.wordLine === i &&
           selection!.wordColStart !== null &&
-          selection!.wordColEnd !== null
-        ) {
-          lineStr = highlightWord(lineStr, selection!.wordColStart, selection!.wordColEnd);
-        }
+          selection!.wordColEnd !== null) {
+        lineStr = highlightWord(lineStr, selection!.wordColStart, selection!.wordColEnd);
       }
-      process.stdout.write(t.text + padEnd(lineStr, cols) + ANSI.reset);
+      const selBg = inSel ? t.selectionBg : "";
+      // Re-apply bg after any reset embedded in book content so the
+      // selection highlight fills the whole line.
+      const displayLine = selBg
+        ? lineStr.replace(/\x1b\[0m/g, `\x1b[0m${selBg}`)
+        : lineStr;
+      process.stdout.write(selBg + fitAnsi(t.text + displayLine, cols));
+    }
+    // Bookmark markers — overlay ◆ at the right edge of bookmarked lines
+    for (const li of this.state.bookmarkedLines) {
+      if (li >= 0 && li < contentRows) {
+        moveTo(li + 3, cols);
+        process.stdout.write(t.accent + "◆" + ANSI.reset);
+      }
     }
 
     // Footer separator + hints
     let hintsText: string;
     if (!selection) {
-      hintsText = "[n]ext [p]rev [b]ookmark [s]peed [v]scroll [/]search [q]uit [?]help";
+      hintsText = "[n]ext [p]rev [b]ookmark [B]marks [s]peed [v]scroll [/]search [q]uit [?]help";
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = "Para selected · [s]peed [b]ookmark [t]ts [esc]clear";
+      hintsText = `Para selected · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
     }
 
     moveTo(rows - 1, 1);
     process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
     moveTo(rows, 1);
     process.stdout.write(
-      t.dim + padEnd(hintsText, cols) + ANSI.reset
+      t.dim + formatHints(hintsText, t) + ANSI.reset
     );
   }
 
@@ -241,47 +268,56 @@ export class PageView {
       const inLeftSel = selection && selection.pageIndex === leftIdx &&
         i >= selection.paraStart && i <= selection.paraEnd;
       let leftLine = leftLines[i] ?? "";
-      if (inLeftSel) {
-        leftLine = ANSI.bold + leftLine;
-        if (
+      if (inLeftSel &&
           selection!.wordLine === i &&
           selection!.wordColStart !== null &&
-          selection!.wordColEnd !== null
-        ) {
-          leftLine = highlightWord(leftLine, selection!.wordColStart, selection!.wordColEnd);
-        }
+          selection!.wordColEnd !== null) {
+        leftLine = highlightWord(leftLine, selection!.wordColStart, selection!.wordColEnd);
       }
 
       // Right side with selection highlight
       const inRightSel = selection && selection.pageIndex === rightIdx &&
         i >= selection.paraStart && i <= selection.paraEnd;
       let rightLine = rightLines[i] ?? "";
-      if (inRightSel) {
-        rightLine = ANSI.bold + rightLine;
-        if (
+      if (inRightSel &&
           selection!.wordLine === i &&
           selection!.wordColStart !== null &&
-          selection!.wordColEnd !== null
-        ) {
-          rightLine = highlightWord(rightLine, selection!.wordColStart, selection!.wordColEnd);
-        }
+          selection!.wordColEnd !== null) {
+        rightLine = highlightWord(rightLine, selection!.wordColStart, selection!.wordColEnd);
       }
 
+      const leftBg  = inLeftSel  ? t.selectionBg : "";
+      const rightBg = inRightSel ? t.selectionBg : "";
+      const displayLeft  = leftBg  ? leftLine.replace( /\x1b\[0m/g, `\x1b[0m${leftBg}`)  : leftLine;
+      const displayRight = rightBg ? rightLine.replace(/\x1b\[0m/g, `\x1b[0m${rightBg}`) : rightLine;
       process.stdout.write(
-        fitAnsi(t.text + leftLine, colWidth) +
+        fitAnsi(leftBg  + t.text + displayLeft,  colWidth) +
         t.border + " │ " + ANSI.reset +
-        fitAnsi(t.text + rightLine, colWidth)
+        fitAnsi(rightBg + t.text + displayRight, colWidth)
       );
+    }
+    // Bookmark markers
+    for (const li of this.state.bookmarkedLines) {
+      if (li >= 0 && li < contentRows) {
+        moveTo(li + 3, colWidth);
+        process.stdout.write(t.accent + "◆" + ANSI.reset);
+      }
+    }
+    for (const li of this.state.bookmarkedLinesRight) {
+      if (li >= 0 && li < contentRows) {
+        moveTo(li + 3, cols);
+        process.stdout.write(t.accent + "◆" + ANSI.reset);
+      }
     }
 
     // ── Footer separator + key hints ──────────────────────────────────────────
     let hintsText: string;
     if (!selection) {
-      hintsText = "[n]ext [p]rev [b]ookmark [s]peed [v]scroll [/]search [q]uit [?]help  — spread";
+      hintsText = "[n]ext [p]rev [b]ookmark [B]marks [s]peed [v]scroll [/]search [q]uit [?]help";
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [t]ts [esc]clear  — spread`;
+      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = "Para selected · [s]peed [b]ookmark [t]ts [esc]clear  — spread";
+      hintsText = `Para selected · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
     }
 
     const gutterBot = "─".repeat(Math.floor(GUTTER / 2)) + "┴" + "─".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
@@ -289,7 +325,7 @@ export class PageView {
     process.stdout.write(t.border + "─".repeat(colWidth) + gutterBot + "─".repeat(colWidth) + ANSI.reset);
     moveTo(rows, 1);
     process.stdout.write(
-      t.dim + padEnd(hintsText, cols) + ANSI.reset
+      t.dim + formatHints(hintsText, t) + ANSI.reset
     );
   }
 
@@ -314,6 +350,7 @@ export class PageView {
     | "command"
     | "escape"
     | "tts"
+    | "bookmarks"
     | { type: "click"; row: number; col: number }
     | null {
     if (key.startsWith("mouse:")) {
@@ -349,6 +386,8 @@ export class PageView {
         return "escape";
       case "t":
         return "tts";
+      case "B":
+        return "bookmarks";
       default:
         return null;
     }

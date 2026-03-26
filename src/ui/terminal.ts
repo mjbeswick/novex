@@ -27,6 +27,14 @@ export function clearScreen(): void {
   process.stdout.write("\x1b[2J\x1b[H");
 }
 
+export function enterAltScreen(): void {
+  process.stdout.write("\x1b[?1049h");
+}
+
+export function exitAltScreen(): void {
+  process.stdout.write("\x1b[?1049l");
+}
+
 export function hideCursor(): void {
   process.stdout.write("\x1b[?25l");
 }
@@ -72,6 +80,7 @@ export function disableRawMode(): void {
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
   }
+  process.stdin.pause();
 }
 
 // ── Key reading ───────────────────────────────────────────────────────────────
@@ -99,6 +108,7 @@ async function readOnce(): Promise<string> {
       if (raw === "\x03") {
         showCursor();
         disableRawMode();
+        exitAltScreen();
         process.exit(0);
       }
       resolve(decodeKey(raw));

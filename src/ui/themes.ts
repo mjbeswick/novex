@@ -18,6 +18,8 @@ export interface ColorTheme {
   statusText: string;
   /** Border / separator colour */
   border: string;
+  /** Background colour for selected paragraph lines */
+  selectionBg: string;
 }
 
 export const themes: Record<Theme, ColorTheme> = {
@@ -30,6 +32,7 @@ export const themes: Record<Theme, ColorTheme> = {
     statusBar: ANSI.bgBlack,
     statusText: ANSI.brightBlack,
     border: ANSI.brightBlack,
+    selectionBg: "\x1b[48;5;236m",  // dark grey tint
   },
   light: {
     background: ANSI.bgWhite,
@@ -40,5 +43,6 @@ export const themes: Record<Theme, ColorTheme> = {
     statusBar: ANSI.bgWhite,
     statusText: "\x1b[90m",
     border: "\x1b[90m",
+    selectionBg: "\x1b[48;5;252m",  // light grey tint
   },
 };
