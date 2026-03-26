@@ -135,20 +135,46 @@ export async function selectFileInteractive(): Promise<string | null> {
 export async function browseDirectory(searchDir: string = process.cwd()): Promise<string | null> {
   const dir = resolve(searchDir);
 
-  // Check if directory exists
+  // Check if directory exists and is accessible
   try {
-    const dirFile = Bun.file(dir);
+    // Expand ~ if needed
+    const expandedDir = dir.startsWith("~") ? dir.replace("~", Bun.env.HOME || "") : dir;
+    const resolvedDir = resolve(expandedDir);
+
+    const dirFile = Bun.file(resolvedDir);
     if (!(await dirFile.exists())) {
-      process.stderr.write(`\nDirectory not found: ${dir}\n`);
+      process.stderr.write(`\nDirectory not found: ${resolvedDir}\n`);
       await new Promise(r => setTimeout(r, 1500)); // Brief pause to show message
       return null;
     }
+
+    // Try to verify it's a directory by attempting to list it
+    try {
+      const glob = new Bun.Glob("*");
+      for await (const _ of glob.scan({ cwd: resolvedDir, onlyFiles: false })) {
+        // If we can iterate, it's a valid directory
+        break;
+      }
+    } catch {
+      process.stderr.write(`\nError: Not a directory or permission denied: ${resolvedDir}\n`);
+      await new Promise(r => setTimeout(r, 1500));
+      return null;
+    }
+
+    // Use the resolved directory for the rest of the function
+    return await browseDirContent(resolvedDir);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`\nError accessing directory: ${msg}\n`);
     await new Promise(r => setTimeout(r, 1500));
     return null;
   }
+}
+
+/**
+ * Helper to scan and browse directory contents.
+ */
+async function browseDirContent(dir: string): Promise<string | null> {
 
   // Recursively find all book files
   const glob = new Bun.Glob(`**/*.{epub,docx,fb2,md,markdown,txt,html,htm}`);
