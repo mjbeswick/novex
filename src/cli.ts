@@ -220,18 +220,65 @@ program
       let source: string | undefined;
       let selectedHash: string | null = null;
 
-      // Determine the search directory (for browse functionality)
+      // Check if file argument is a directory or a book file
       let searchDir = process.cwd();
-      if (file) {
-        searchDir = require('path').dirname(require('path').resolve(file));
-      }
+      let isDirectory = false;
 
       if (file) {
+        const filePath = require('path').resolve(file);
+        const fileObj = Bun.file(filePath);
+
+        if (await fileObj.exists()) {
+          // Try to detect if it's a directory
+          try {
+            const dirTest = new Bun.Glob("*").scan({ cwd: filePath });
+            for await (const _ of dirTest) {
+              isDirectory = true;
+              searchDir = filePath;
+              break;
+            }
+          } catch {
+            isDirectory = false;
+          }
+        }
+
+        if (!isDirectory) {
+          searchDir = require('path').dirname(filePath);
+        }
+      }
+
+      if (file && !isDirectory) {
         ({ buffer, source } = await readFromFile(file));
       } else if (isStdinPiped()) {
         ({ buffer, source } = await readFromStdin());
+      } else if (isDirectory) {
+        // Directory passed - show browse dialog
+        enableRawMode();
+        hideCursor();
+        enterAltScreen();
+
+        try {
+          const newBookPath = await browseDirectory(searchDir);
+          exitAltScreen();
+          showCursor();
+          disableRawMode();
+
+          if (newBookPath) {
+            ({ buffer, source } = await readFromFile(newBookPath));
+          } else {
+            program.help({ error: false });
+            process.exit(0);
+          }
+        } catch (err) {
+          exitAltScreen();
+          showCursor();
+          disableRawMode();
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`\nError: ${msg}\n`);
+          process.exit(1);
+        }
       } else {
-        // Try to show books list if there are any books
+        // No arguments - try to show books list if there are any books
         const books = await listBooks();
         const theme: Theme = (opts["theme"] as Theme) ?? "dark";
 
