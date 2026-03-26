@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import type { CLIOptions, Theme, ReadingMode } from "./types.ts";
-import { readFromFile, readFromStdin, isStdinPiped, selectFileInteractive } from "./input.ts";
+import { readFromFile, readFromStdin, isStdinPiped, selectFileInteractive, browseBooksDirectory } from "./input.ts";
 import { detectFormat, convertToContent } from "./readers/index.ts";
 import { getFileState, listBooks, deleteBook } from "./store.ts";
 import { showCursor, disableRawMode, showBooksList, enableRawMode, hideCursor, enterAltScreen, exitAltScreen } from "./ui/index.ts";
@@ -89,7 +89,7 @@ program
     try {
       const theme: Theme = (opts["theme"] as Theme) ?? "dark";
 
-      const books = await listBooks();
+      let books = await listBooks();
 
       if (books.length === 0) {
         console.log("No books read yet.");
@@ -101,8 +101,52 @@ program
       enterAltScreen();
 
       try {
-        const selectedHash = await showBooksList(books, theme, async (hash) => {
+        let selectedHash: string | null = null;
+
+        selectedHash = await showBooksList(books, theme, async (hash) => {
           await deleteBook(hash);
+        }, async () => {
+          exitAltScreen();
+          showCursor();
+          disableRawMode();
+
+          const newBookPath = await browseBooksDirectory();
+
+          enableRawMode();
+          hideCursor();
+          enterAltScreen();
+
+          if (newBookPath) {
+            const { buffer, source } = await readFromFile(newBookPath);
+            const format = detectFormat(source, buffer);
+            const content = await convertToContent(source, buffer, format);
+            const options: CLIOptions = {
+              mode: "page",
+              wpm: 250,
+              chunk: 1,
+              theme,
+              lineWidth: undefined,
+              position: undefined,
+              noSave: false,
+              tts: false,
+            };
+
+            exitAltScreen();
+            showCursor();
+            disableRawMode();
+
+            await runSession(content, options);
+
+            // Refresh book list after reading
+            const updatedBooks = await listBooks();
+            if (updatedBooks.length > books.length) {
+              books = updatedBooks;
+            }
+
+            enableRawMode();
+            hideCursor();
+            enterAltScreen();
+          }
         });
 
         if (selectedHash) {
@@ -164,8 +208,8 @@ program
   .action(async (file: string | undefined, opts: Record<string, string | boolean | undefined>) => {
     // Only run if no subcommand was invoked
     try {
-      let buffer: Uint8Array;
-      let source: string;
+      let buffer: Uint8Array | undefined;
+      let source: string | undefined;
       let selectedHash: string | null = null;
 
       if (file) {
@@ -185,6 +229,20 @@ program
           try {
             selectedHash = await showBooksList(books, theme, async (hash) => {
               await deleteBook(hash);
+            }, async () => {
+              exitAltScreen();
+              showCursor();
+              disableRawMode();
+
+              const newBookPath = await browseBooksDirectory();
+
+              if (newBookPath) {
+                ({ buffer, source } = await readFromFile(newBookPath));
+              }
+
+              enableRawMode();
+              hideCursor();
+              enterAltScreen();
             });
           } finally {
             exitAltScreen();
@@ -192,7 +250,7 @@ program
             disableRawMode();
           }
 
-          if (selectedHash) {
+          if (selectedHash && !buffer) {
             // Find and open the selected book
             const book = books.find((b) => b.hash === selectedHash);
             if (book && book.state.source) {
@@ -201,8 +259,8 @@ program
               program.help({ error: false });
               process.exit(0);
             }
-          } else {
-            // User dismissed the list, show file selector
+          } else if (!buffer) {
+            // User dismissed the list and didn't browse, show file selector
             const selected = await selectFileInteractive();
             if (selected === null) {
               program.help({ error: false });
@@ -211,14 +269,49 @@ program
             ({ buffer, source } = await readFromFile(selected));
           }
         } else {
-          // No books in history, show file selector
-          const selected = await selectFileInteractive();
-          if (selected === null) {
-            program.help({ error: false });
-            process.exit(0);
+          // No books in history, show browse or file selector
+          enableRawMode();
+          hideCursor();
+          enterAltScreen();
+
+          try {
+            await showBooksList([], theme, async () => {}, async () => {
+              exitAltScreen();
+              showCursor();
+              disableRawMode();
+
+              const newBookPath = await browseBooksDirectory();
+
+              if (newBookPath) {
+                ({ buffer, source } = await readFromFile(newBookPath));
+              }
+
+              enableRawMode();
+              hideCursor();
+              enterAltScreen();
+            });
+          } finally {
+            exitAltScreen();
+            showCursor();
+            disableRawMode();
           }
-          ({ buffer, source } = await readFromFile(selected));
+
+          if (!buffer) {
+            // User didn't select from browse, fall back to file selector
+            const selected = await selectFileInteractive();
+            if (selected === null) {
+              program.help({ error: false });
+              process.exit(0);
+            }
+            ({ buffer, source } = await readFromFile(selected));
+          }
         }
+      }
+
+      // Ensure buffer and source are defined
+      if (!buffer || !source) {
+        process.stderr.write("Error: No file selected\n");
+        process.exit(1);
       }
 
       const format = detectFormat(source, buffer);

@@ -24,6 +24,23 @@ function padToWidth(str: string, width: number): string {
   return str + " ".repeat(width - vl);
 }
 
+function hotkeyLabel(t: (typeof themes)[Theme], hotkey: string, label: string): string {
+  const index = label.toLowerCase().indexOf(hotkey.toLowerCase());
+  if (index === -1) return t.dim + label + ANSI.reset;
+  return (
+    t.dim +
+    label.slice(0, index) +
+    ANSI.reset +
+    t.accent +
+    ANSI.bold +
+    label[index] +
+    ANSI.reset +
+    t.dim +
+    label.slice(index + 1) +
+    ANSI.reset
+  );
+}
+
 /**
  * Book list item with hash for selection/deletion.
  */
@@ -36,11 +53,13 @@ interface BookItem {
  * Interactive books list overlay.
  * Returns the hash of the selected book to open, or null if dismissed.
  * Calls onDelete(hash) when the user deletes a book.
+ * Calls onBrowse() when the user presses 'b' to browse for new books.
  */
 export async function showBooksList(
   books: BookItem[],
   theme: Theme,
-  onDelete: (hash: string) => Promise<void>
+  onDelete: (hash: string) => Promise<void>,
+  onBrowse?: () => Promise<void>
 ): Promise<string | null> {
   const t = themes[theme];
   // Track items with their original indices
@@ -98,15 +117,18 @@ export async function showBooksList(
     moveTo(r, 1);
     if (items.length > 0) {
       process.stdout.write(
-        t.dim +
-        `↑↓ select  ` + ANSI.reset + t.accent + ANSI.bold + `enter` + ANSI.reset + t.dim +
-        ` open  ` + ANSI.reset + t.accent + ANSI.bold + `d` + ANSI.reset + t.dim +
-        ` delete  ` + ANSI.reset + t.accent + ANSI.bold + `esc` + ANSI.reset + t.dim +
-        ` close` + ANSI.reset
+        t.dim + `↑↓ select  ` + ANSI.reset +
+        hotkeyLabel(t, "o", "open") +
+        t.dim + `  ` + ANSI.reset +
+        hotkeyLabel(t, "d", "delete") +
+        (onBrowse ? t.dim + `  ` + ANSI.reset + hotkeyLabel(t, "b", "browse") : "") +
+        t.dim + `  ` + ANSI.reset +
+        hotkeyLabel(t, "c", "close")
       );
     } else {
       process.stdout.write(
-        t.accent + ANSI.bold + `esc` + ANSI.reset + t.dim + ` close` + ANSI.reset
+        (onBrowse ? hotkeyLabel(t, "b", "browse") + t.dim + `  ` + ANSI.reset : "") +
+        hotkeyLabel(t, "c", "close")
       );
     }
   }
@@ -116,7 +138,13 @@ export async function showBooksList(
   while (true) {
     const key = await readKey();
 
-    if (key === "escape" || key === "q") return null;
+    if (key === "escape" || key === "q" || key === "c") return null;
+
+    if (key === "b" && onBrowse) {
+      await onBrowse();
+      render();
+      continue;
+    }
 
     if (items.length === 0) continue;
 
@@ -126,7 +154,7 @@ export async function showBooksList(
     } else if (key === "down" || key === "j") {
       selected = Math.min(items.length - 1, selected + 1);
       render();
-    } else if (key === "enter") {
+    } else if (key === "enter" || key === "o") {
       return items[selected]?.hash ?? null;
     } else if (key === "d") {
       const item = items[selected];

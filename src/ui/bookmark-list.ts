@@ -33,6 +33,23 @@ function padToWidth(str: string, width: number): string {
   return str + " ".repeat(width - vl);
 }
 
+function hotkeyLabel(t: (typeof themes)[Theme], hotkey: string, label: string): string {
+  const index = label.toLowerCase().indexOf(hotkey.toLowerCase());
+  if (index === -1) return t.dim + label + ANSI.reset;
+  return (
+    t.dim +
+    label.slice(0, index) +
+    ANSI.reset +
+    t.accent +
+    ANSI.bold +
+    label[index] +
+    ANSI.reset +
+    t.dim +
+    label.slice(index + 1) +
+    ANSI.reset
+  );
+}
+
 /**
  * Interactive bookmark list overlay.
  * Returns the position string to navigate to, or null if dismissed.
@@ -100,15 +117,16 @@ export async function showBookmarks(
     moveTo(r, 1);
     if (items.length > 0) {
       process.stdout.write(
-        t.dim +
-        `↑↓ select  ` + ANSI.reset + t.accent + ANSI.bold + `enter` + ANSI.reset + t.dim +
-        ` navigate  ` + ANSI.reset + t.accent + ANSI.bold + `d` + ANSI.reset + t.dim +
-        ` delete  ` + ANSI.reset + t.accent + ANSI.bold + `esc` + ANSI.reset + t.dim +
-        ` close` + ANSI.reset
+        t.dim + `↑↓ select  ` + ANSI.reset +
+        hotkeyLabel(t, "n", "navigate") +
+        t.dim + `  ` + ANSI.reset +
+        hotkeyLabel(t, "d", "delete") +
+        t.dim + `  ` + ANSI.reset +
+        hotkeyLabel(t, "c", "close")
       );
     } else {
       process.stdout.write(
-        t.accent + ANSI.bold + `esc` + ANSI.reset + t.dim + ` close` + ANSI.reset
+        hotkeyLabel(t, "c", "close")
       );
     }
   }
@@ -118,7 +136,7 @@ export async function showBookmarks(
   while (true) {
     const key = await readKey();
 
-    if (key === "escape" || key === "q") return null;
+    if (key === "escape" || key === "q" || key === "c") return null;
 
     if (items.length === 0) continue;
 
@@ -128,7 +146,7 @@ export async function showBookmarks(
     } else if (key === "down" || key === "j") {
       selected = Math.min(items.length - 1, selected + 1);
       render();
-    } else if (key === "enter") {
+    } else if (key === "enter" || key === "n") {
       return items[selected]?.bm.position ?? null;
     } else if (key === "d") {
       const item = items[selected];

@@ -129,6 +129,98 @@ export async function selectFileInteractive(): Promise<string | null> {
 }
 
 /**
+ * Recursively scans ~/books for readable book files and returns an interactive selector.
+ * Returns the selected file path, or null if cancelled.
+ */
+export async function browseBooksDirectory(): Promise<string | null> {
+  const booksDir = resolve(Bun.env.HOME ?? "~", "books");
+
+  // Check if ~/books directory exists
+  try {
+    const dir = Bun.file(booksDir);
+    if (!(await dir.exists())) {
+      process.stdout.write(`Books directory not found: ${booksDir}\n`);
+      return null;
+    }
+  } catch {
+    process.stdout.write(`Error accessing books directory: ${booksDir}\n`);
+    return null;
+  }
+
+  // Recursively find all book files
+  const glob = new Bun.Glob(`**/*.{epub,docx,fb2,md,markdown,txt,html,htm}`);
+  const files: string[] = [];
+
+  for await (const file of glob.scan({ cwd: booksDir, onlyFiles: true })) {
+    files.push(file);
+  }
+
+  files.sort();
+
+  if (files.length === 0) {
+    process.stdout.write(`No readable files found in ${booksDir}\n`);
+    return null;
+  }
+
+  let selectedIndex = 0;
+
+  const CURSOR_UP = "\x1b[A";
+  const CURSOR_DOWN = "\x1b[B";
+  const ENTER = "\r";
+  const ENTER_LF = "\n";
+  const ESCAPE = "\x1b";
+  const CTRL_C = "\x03";
+  const KEY_Q = "q";
+
+  const renderMenu = () => {
+    process.stdout.write("\x1b[2J\x1b[H"); // clear screen, move to top
+    process.stdout.write(`Select a book from ${booksDir} (↑/↓ to navigate, Enter to select, q/Esc to cancel):\n\n`);
+    for (let i = 0; i < files.length; i++) {
+      if (i === selectedIndex) {
+        process.stdout.write(`  \x1b[7m${files[i]}\x1b[0m\n`); // reverse video for selection
+      } else {
+        process.stdout.write(`  ${files[i]}\n`);
+      }
+    }
+  };
+
+  return new Promise<string | null>((resolvePromise) => {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+
+    renderMenu();
+
+    const onData = (key: string) => {
+      if (key === CURSOR_UP) {
+        selectedIndex = (selectedIndex - 1 + files.length) % files.length;
+        renderMenu();
+      } else if (key === CURSOR_DOWN) {
+        selectedIndex = (selectedIndex + 1) % files.length;
+        renderMenu();
+      } else if (key === ENTER || key === ENTER_LF) {
+        cleanup();
+        const selected = resolve(booksDir, files[selectedIndex]);
+        process.stdout.write("\x1b[2J\x1b[H"); // clear screen
+        resolvePromise(selected);
+      } else if (key === ESCAPE || key === KEY_Q || key === CTRL_C) {
+        cleanup();
+        process.stdout.write("\x1b[2J\x1b[H"); // clear screen
+        resolvePromise(null);
+      }
+    };
+
+    const cleanup = () => {
+      process.stdin.removeListener("data", onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+
+    process.stdin.on("data", onData);
+  });
+}
+
+/**
  * Returns the SHA-256 hex hash of the given buffer using Bun's crypto.
  */
 export async function computeHash(buffer: Uint8Array): Promise<string> {
