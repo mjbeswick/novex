@@ -128,10 +128,12 @@ export async function deleteBookmark(hash: string, index: number): Promise<void>
 /**
  * Lists all books (file entries) in the history with their hashes.
  * Returns entries sorted by lastRead (most recent first).
+ * Only includes entries that have a source (can be reopened).
  */
 export async function listBooks(): Promise<Array<{ hash: string; state: FileState }>> {
   const store = await loadHistory();
   const entries = Object.entries(store)
+    .filter(([_, state]) => state.source) // Only include entries with a source file
     .map(([hash, state]) => ({ hash, state }))
     .sort((a, b) => new Date(b.state.lastRead).getTime() - new Date(a.state.lastRead).getTime());
   return entries;
