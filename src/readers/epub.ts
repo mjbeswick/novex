@@ -140,6 +140,9 @@ export async function convertEpub(
   const fullHtml = chapters.map((c) => c.html).join("\n");
   const fullText = htmlToPlainText(fullHtml);
 
+  // Extract cover image if available
+  const coverImage = await extractCoverImage(zip, opfRoot, manifest, opfDir);
+
   return {
     html: fullHtml,
     text: fullText,
@@ -147,6 +150,7 @@ export async function convertEpub(
     source,
     hash,
     chapters,
+    coverImage,
   };
 }
 
@@ -246,4 +250,61 @@ async function loadTocTitles(
   }
 
   return titles;
+}
+
+/**
+ * Extracts the cover image from an EPUB and returns it as a base64 data URL.
+ */
+async function extractCoverImage(
+  zip: JSZip,
+  opfRoot: any,
+  manifest: Map<string, { href: string; mediaType: string }>,
+  opfDir: string
+): Promise<string | undefined> {
+  // Look for cover image reference in metadata
+  const metaEl = opfRoot.querySelector("metadata");
+  if (!metaEl) return undefined;
+
+  // Try to find cover meta tag (common in EPUB 3)
+  const coverMeta = metaEl.querySelector("meta[name='cover'], meta[property='cover']");
+  let coverId = coverMeta?.getAttribute("content");
+
+  if (coverId && manifest.has(coverId)) {
+    const coverItem = manifest.get(coverId);
+    if (coverItem && coverItem.mediaType.startsWith("image/")) {
+      const coverPath = path.join(opfDir, coverItem.href);
+      const coverFile = zip.file(coverPath);
+      if (coverFile) {
+        try {
+          const imageBuffer = await coverFile.async("arraybuffer");
+          const base64 = Buffer.from(imageBuffer).toString("base64");
+          // Determine MIME type
+          const mimeType = coverItem.mediaType || "image/jpeg";
+          return `data:${mimeType};base64,${base64}`;
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+
+  // Fallback: look for first image in manifest
+  for (const [, entry] of manifest) {
+    if (entry.mediaType.startsWith("image/")) {
+      const imagePath = path.join(opfDir, entry.href);
+      const imageFile = zip.file(imagePath);
+      if (imageFile) {
+        try {
+          const imageBuffer = await imageFile.async("arraybuffer");
+          const base64 = Buffer.from(imageBuffer).toString("base64");
+          const mimeType = entry.mediaType || "image/jpeg";
+          return `data:${mimeType};base64,${base64}`;
+        } catch {
+          continue;
+        }
+      }
+    }
+  }
+
+  return undefined;
 }

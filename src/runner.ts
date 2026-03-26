@@ -16,6 +16,7 @@ import {
   enableMouseTracking,
   disableMouseTracking,
 } from "./ui/index.ts";
+import { displayImage } from "./ui/sixel.ts";
 import {
   PageView,
   ScrollView,
@@ -251,6 +252,17 @@ export async function runSession(
 
   // Flatten all page lines for scroll view
   let allLines: string[] = pages.flatMap((p) => p.lines);
+
+  // Show cover image if available and starting from beginning
+  if (content.coverImage && (!initialPosition || startPage === 0)) {
+    try {
+      await displayImage(content.coverImage, content.title);
+      // Brief pause to show the cover
+      await new Promise(r => setTimeout(r, 1000));
+    } catch {
+      // If cover display fails, just continue
+    }
+  }
 
   enterAltScreen();
   hideCursor();
