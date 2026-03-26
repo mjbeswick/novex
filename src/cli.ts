@@ -223,11 +223,16 @@ program
       // Helper to check if a path is a directory
       const isDir = async (path: string): Promise<boolean> => {
         try {
+          // Try to list contents - if this succeeds, it's a directory
           const dirTest = new Bun.Glob("*").scan({ cwd: path });
+          // Try to read at least one entry (or verify it's empty but accessible)
+          let hasAccess = false;
           for await (const _ of dirTest) {
-            return true;
+            hasAccess = true;
+            break;
           }
-          return false;
+          // If we can iterate (even with 0 results), it's a valid directory
+          return true;
         } catch {
           return false;
         }

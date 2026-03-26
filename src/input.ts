@@ -133,13 +133,11 @@ export async function selectFileInteractive(): Promise<string | null> {
  * Returns the selected file path, or null if cancelled.
  */
 export async function browseDirectory(searchDir: string = process.cwd()): Promise<string | null> {
-  const dir = resolve(searchDir);
-
   // Check if directory exists and is accessible
   try {
-    // Expand ~ if needed
-    const expandedDir = dir.startsWith("~") ? dir.replace("~", Bun.env.HOME || "") : dir;
-    const resolvedDir = resolve(expandedDir);
+    // Expand ~ if needed, then resolve to absolute path
+    let dir = searchDir.startsWith("~") ? searchDir.replace("~", Bun.env.HOME || "") : searchDir;
+    const resolvedDir = resolve(dir);
 
     const dirFile = Bun.file(resolvedDir);
     if (!(await dirFile.exists())) {
