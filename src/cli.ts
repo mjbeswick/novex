@@ -204,7 +204,7 @@ program
 
 // Default command when no subcommand given — treat as `read`
 program
-  .argument("[file]")
+  .argument("[files...]")
   .option("--mode <mode>", "Reading mode: page | scroll | speed | rsvp", "page")
   .option("--wpm <number>", "Words per minute for speed/rsvp modes", "250")
   .option("--chunk <number>", "Chunk size for speed mode", "1")
@@ -213,40 +213,140 @@ program
   .option("--position <position>", "Start at position (e.g. page:5 or word:200)")
   .option("--no-save", "Disable saving reading position")
   .option("--tts", "Enable text-to-speech synchronized with reading")
-  .action(async (file: string | undefined, opts: Record<string, string | boolean | undefined>) => {
+  .action(async (files: string[], opts: Record<string, string | boolean | undefined>) => {
     // Only run if no subcommand was invoked
     try {
       let buffer: Uint8Array | undefined;
       let source: string | undefined;
       let selectedHash: string | null = null;
 
-      // Check if file argument is a directory or a book file
+      // Helper to check if a path is a directory
+      const isDir = async (path: string): Promise<boolean> => {
+        try {
+          const dirTest = new Bun.Glob("*").scan({ cwd: path });
+          for await (const _ of dirTest) {
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      };
+
+      // Determine how to proceed based on arguments
+      let file: string | undefined;
       let searchDir = process.cwd();
       let isDirectory = false;
+      let hasMultiplePaths = files && files.length > 1;
 
-      if (file) {
+      if (files && files.length === 1) {
+        // Single file/directory provided
+        file = files[0];
         const filePath = require('path').resolve(file);
-        const fileObj = Bun.file(filePath);
+        isDirectory = await isDir(filePath);
+        if (!isDirectory) {
+          searchDir = require('path').dirname(filePath);
+        } else {
+          searchDir = filePath;
+        }
+      } else if (hasMultiplePaths) {
+        // Multiple paths provided - collect all files and show selection
+        const path = require('path');
+        const allFiles: string[] = [];
 
-        if (await fileObj.exists()) {
-          // Try to detect if it's a directory
-          try {
-            const dirTest = new Bun.Glob("*").scan({ cwd: filePath });
-            for await (const _ of dirTest) {
-              isDirectory = true;
-              searchDir = filePath;
-              break;
+        for (const inputPath of files) {
+          const resolvedPath = path.resolve(inputPath);
+          if (await isDir(resolvedPath)) {
+            // Scan directory recursively
+            const glob = new Bun.Glob(`**/*.{epub,docx,fb2,md,markdown,txt,html,htm}`);
+            for await (const f of glob.scan({ cwd: resolvedPath, onlyFiles: true })) {
+              allFiles.push(path.resolve(resolvedPath, f));
             }
-          } catch {
-            isDirectory = false;
+          } else {
+            // It's a file
+            allFiles.push(resolvedPath);
           }
         }
 
-        if (!isDirectory) {
-          searchDir = require('path').dirname(filePath);
+        if (allFiles.length === 0) {
+          process.stderr.write("No readable files found in provided paths\n");
+          process.exit(1);
+        } else if (allFiles.length === 1) {
+          file = allFiles[0];
+        } else {
+          // Multiple files - show selection dialog
+          enableRawMode();
+          hideCursor();
+          enterAltScreen();
+
+          try {
+            const theme: Theme = (opts["theme"] as Theme) ?? "dark";
+            const t = require('./ui/themes').themes[theme];
+
+            // Simple selection dialog
+            let selected = 0;
+            const renderMenu = () => {
+              require('./ui/terminal').clearScreen();
+              require('./ui/terminal').moveTo(2, 1);
+              process.stdout.write(
+                t.accent + require('./ui/terminal').ANSI.bold +
+                "Select a book:" +
+                require('./ui/terminal').ANSI.reset
+              );
+
+              for (let i = 0; i < allFiles.length; i++) {
+                require('./ui/terminal').moveTo(4 + i, 1);
+                const fileName = require('path').basename(allFiles[i]);
+                if (i === selected) {
+                  process.stdout.write(
+                    t.selectionBg +
+                    `  ${fileName}` +
+                    require('./ui/terminal').ANSI.reset
+                  );
+                } else {
+                  process.stdout.write(`  ${fileName}`);
+                }
+              }
+            };
+
+            renderMenu();
+
+            let done = false;
+            while (!done) {
+              const key = await require('./ui/terminal').readKey();
+              if (key === "up" || key === "k") {
+                selected = Math.max(0, selected - 1);
+                renderMenu();
+              } else if (key === "down" || key === "j") {
+                selected = Math.min(allFiles.length - 1, selected + 1);
+                renderMenu();
+              } else if (key === "enter") {
+                file = allFiles[selected];
+                done = true;
+              } else if (key === "escape" || key === "q") {
+                done = true;
+              }
+            }
+
+            exitAltScreen();
+            showCursor();
+            disableRawMode();
+
+            if (!file) {
+              process.exit(0);
+            }
+          } catch (err) {
+            exitAltScreen();
+            showCursor();
+            disableRawMode();
+            const msg = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`\nError: ${msg}\n`);
+            process.exit(1);
+          }
         }
       }
 
+      // Now handle the selected file/directory
       if (file && !isDirectory) {
         ({ buffer, source } = await readFromFile(file));
       } else if (isStdinPiped()) {
