@@ -52,12 +52,13 @@ export async function imageToSixel(
 
     try {
       // Use convert (from ImageMagick) to resize and output as sixel
-      // If not available, this will fail gracefully
-      await Bun.spawn([
+      // If not available, this will fail gracefully (convert not found is expected)
+      const proc = Bun.spawn([
         "sh",
         "-c",
-        `convert "${tmpFile}" -resize ${maxWidth}x30 sixel:"${outFile}"`,
-      ]).exited;
+        `convert "${tmpFile}" -resize ${maxWidth}x30 sixel:"${outFile}" 2>/dev/null`,
+      ]);
+      await proc.exited;
 
       const sixelFile = Bun.file(outFile);
       if (await sixelFile.exists()) {
@@ -86,25 +87,26 @@ export async function imageToSixel(
 
 /**
  * Displays an image with sixel rendering or a text placeholder.
+ * Silently falls back if sixel or ImageMagick unavailable.
  */
 export async function displayImage(
   imageData: Buffer | string,
   title: string = "Cover"
 ): Promise<void> {
   if (!supportsXixel()) {
-    // Terminal doesn't support sixel, show placeholder
-    process.stdout.write(`\n[📖 ${title}]\n\n`);
+    // Terminal doesn't support sixel, silently skip
     return;
   }
 
-  const sixelData = await imageToSixel(imageData);
-
-  if (sixelData) {
-    // Render with sixel
-    process.stdout.write(sixelData);
-    process.stdout.write("\n");
-  } else {
-    // Fallback to text placeholder
-    process.stdout.write(`\n[📖 ${title}]\n\n`);
+  try {
+    const sixelData = await imageToSixel(imageData);
+    if (sixelData && sixelData.length > 0) {
+      // Render with sixel
+      process.stdout.write(sixelData);
+      process.stdout.write("\n");
+    }
+    // If sixel conversion failed, silently skip (ImageMagick not installed)
+  } catch {
+    // Silently fail - cover display is optional
   }
 }
