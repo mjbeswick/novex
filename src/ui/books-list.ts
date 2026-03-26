@@ -52,7 +52,7 @@ interface BookItem {
 /**
  * Interactive books list overlay.
  * Returns the hash of the selected book to open, or null if dismissed.
- * Calls onDelete(hash) when the user deletes a book.
+ * Calls onDelete(hash) when the user forgets a book.
  * Calls onBrowse() when the user presses 'b' to browse for new books.
  */
 export async function showBooksList(
@@ -120,7 +120,7 @@ export async function showBooksList(
         t.dim + `↑↓ select  ` + ANSI.reset +
         hotkeyLabel(t, "o", "open") +
         t.dim + `  ` + ANSI.reset +
-        hotkeyLabel(t, "d", "delete") +
+        hotkeyLabel(t, "f", "forget") +
         (onBrowse ? t.dim + `  ` + ANSI.reset + hotkeyLabel(t, "b", "browse") : "") +
         t.dim + `  ` + ANSI.reset +
         hotkeyLabel(t, "c", "close")
@@ -156,7 +156,7 @@ export async function showBooksList(
       render();
     } else if (key === "enter" || key === "o") {
       return items[selected]?.hash ?? null;
-    } else if (key === "d") {
+    } else if (key === "f") {
       const item = items[selected];
       if (item) {
         await onDelete(item.hash);
