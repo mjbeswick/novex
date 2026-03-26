@@ -129,23 +129,23 @@ export async function selectFileInteractive(): Promise<string | null> {
 }
 
 /**
- * Recursively scans ~/books for readable book files and returns an interactive selector.
+ * Recursively scans a directory for readable book files and returns an interactive selector.
  * Returns the selected file path, or null if cancelled.
  */
-export async function browseBooksDirectory(): Promise<string | null> {
-  const booksDir = resolve(Bun.env.HOME ?? "~", "books");
+export async function browseDirectory(searchDir: string = process.cwd()): Promise<string | null> {
+  const dir = resolve(searchDir);
 
-  // Check if ~/books directory exists
+  // Check if directory exists
   try {
-    const dir = Bun.file(booksDir);
-    if (!(await dir.exists())) {
-      process.stderr.write(`\nBooks directory not found: ${booksDir}\n`);
+    const dirFile = Bun.file(dir);
+    if (!(await dirFile.exists())) {
+      process.stderr.write(`\nDirectory not found: ${dir}\n`);
       await new Promise(r => setTimeout(r, 1500)); // Brief pause to show message
       return null;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`\nError accessing books directory: ${msg}\n`);
+    process.stderr.write(`\nError accessing directory: ${msg}\n`);
     await new Promise(r => setTimeout(r, 1500));
     return null;
   }
@@ -155,7 +155,7 @@ export async function browseBooksDirectory(): Promise<string | null> {
   const files: string[] = [];
 
   try {
-    for await (const file of glob.scan({ cwd: booksDir, onlyFiles: true })) {
+    for await (const file of glob.scan({ cwd: dir, onlyFiles: true })) {
       files.push(file);
     }
   } catch (err) {
@@ -168,7 +168,7 @@ export async function browseBooksDirectory(): Promise<string | null> {
   files.sort();
 
   if (files.length === 0) {
-    process.stderr.write(`\nNo readable files found in ${booksDir}\n`);
+    process.stderr.write(`\nNo readable files found in ${dir}\n`);
     await new Promise(r => setTimeout(r, 1500));
     return null;
   }
@@ -185,7 +185,7 @@ export async function browseBooksDirectory(): Promise<string | null> {
 
   const renderMenu = () => {
     process.stdout.write("\x1b[2J\x1b[H"); // clear screen, move to top
-    process.stdout.write(`Select a book from ${booksDir} (↑/↓ to navigate, Enter to select, q/Esc to cancel):\n\n`);
+    process.stdout.write(`Select a book from ${dir} (↑/↓ to navigate, Enter to select, q/Esc to cancel):\n\n`);
     for (let i = 0; i < files.length; i++) {
       if (i === selectedIndex) {
         process.stdout.write(`  \x1b[7m${files[i]}\x1b[0m\n`); // reverse video for selection
@@ -211,7 +211,7 @@ export async function browseBooksDirectory(): Promise<string | null> {
         renderMenu();
       } else if (key === ENTER || key === ENTER_LF) {
         cleanup();
-        const selected = resolve(booksDir, files[selectedIndex]);
+        const selected = resolve(dir, files[selectedIndex]);
         process.stdout.write("\x1b[2J\x1b[H"); // clear screen
         resolvePromise(selected);
       } else if (key === ESCAPE || key === KEY_Q || key === CTRL_C) {

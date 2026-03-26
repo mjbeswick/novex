@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import type { CLIOptions, Theme, ReadingMode } from "./types.ts";
-import { readFromFile, readFromStdin, isStdinPiped, selectFileInteractive, browseBooksDirectory } from "./input.ts";
+import { readFromFile, readFromStdin, isStdinPiped, selectFileInteractive, browseDirectory } from "./input.ts";
 import { detectFormat, convertToContent } from "./readers/index.ts";
 import { getFileState, listBooks, deleteBook } from "./store.ts";
 import { showCursor, disableRawMode, showBooksList, enableRawMode, hideCursor, enterAltScreen, exitAltScreen } from "./ui/index.ts";
@@ -111,7 +111,7 @@ program
           disableRawMode();
 
           try {
-            const newBookPath = await browseBooksDirectory();
+            const newBookPath = await browseDirectory();
 
             enableRawMode();
             hideCursor();
@@ -220,6 +220,12 @@ program
       let source: string | undefined;
       let selectedHash: string | null = null;
 
+      // Determine the search directory (for browse functionality)
+      let searchDir = process.cwd();
+      if (file) {
+        searchDir = require('path').dirname(require('path').resolve(file));
+      }
+
       if (file) {
         ({ buffer, source } = await readFromFile(file));
       } else if (isStdinPiped()) {
@@ -242,7 +248,7 @@ program
               showCursor();
               disableRawMode();
 
-              const newBookPath = await browseBooksDirectory();
+              const newBookPath = await browseDirectory(searchDir);
 
               if (newBookPath) {
                 ({ buffer, source } = await readFromFile(newBookPath));
@@ -289,7 +295,7 @@ program
               disableRawMode();
 
               try {
-                const newBookPath = await browseBooksDirectory();
+                const newBookPath = await browseDirectory(searchDir);
 
                 if (newBookPath) {
                   ({ buffer, source } = await readFromFile(newBookPath));
