@@ -159,7 +159,8 @@ export async function updateLastPosition(
   hash: string,
   position: string,
   source?: string,
-  title?: string
+  title?: string,
+  totalPages?: number
 ): Promise<void> {
   const store = await loadHistory();
 
@@ -170,12 +171,14 @@ export async function updateLastPosition(
       lastRead: new Date().toISOString(),
       source: source ?? "",
       title: title ?? "",
+      lastTotalPages: totalPages,
     };
   } else {
     store[hash].lastPosition = position;
     store[hash].lastRead = new Date().toISOString();
     if (source) store[hash].source = source;
     if (title) store[hash].title = title;
+    if (totalPages !== undefined) store[hash].lastTotalPages = totalPages;
   }
 
   await saveHistory(store);

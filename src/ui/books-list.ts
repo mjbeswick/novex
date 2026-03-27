@@ -8,6 +8,36 @@ function formatDate(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function formatRelativeTime(iso: string): string {
+  const now = new Date();
+  const then = new Date(iso);
+  const diffMs = now.getTime() - then.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+
+  if (diffSecs < 60) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffWeeks < 4) return `${diffWeeks}w ago`;
+  if (diffMonths < 12) return `${diffMonths}mo ago`;
+  return `${diffYears}y ago`;
+}
+
+function calculatePercentage(position: string, totalPages?: number): string {
+  if (!totalPages || totalPages <= 1) return "—";
+  const [type, value] = position.split(":");
+  if (type !== "page") return "—";
+  const pageNum = parseInt(value, 10);
+  const percent = Math.round((pageNum / (totalPages - 1)) * 100);
+  return `${percent}%`;
+}
+
 function center(str: string, width: number): string {
   if (str.length >= width) return str.slice(0, width);
   const pad = Math.floor((width - str.length) / 2);
@@ -92,21 +122,21 @@ export async function showBooksList(
 
         const num = `  ${String(itemIdx + 1).padStart(2)}.  `;
         const title = item.state.title || item.state.source;
-        const date = formatDate(item.state.lastRead);
-        const dateStr = `  ${t.dim}${date}${ANSI.reset}  `;
-        const dateVisible = 2 + visLen(date) + 2;
+        const percent = calculatePercentage(item.state.lastPosition, item.state.lastTotalPages);
+        const relTime = formatRelativeTime(item.state.lastRead);
+        const rightStr = `  ${t.dim}${percent} · ${relTime}${ANSI.reset}  `;
+        const rightVisible = 2 + visLen(percent) + 3 + visLen(relTime) + 2;
 
         const leftText = `${num}${title}`;
         const leftVisible = visLen(leftText);
-        const gap = Math.max(1, cols - leftVisible - dateVisible);
 
         moveTo(listStart + i, 1);
         if (isSelected) {
           const line = `${num}${t.accent}${ANSI.bold}${title}${ANSI.reset}`;
-          process.stdout.write(t.selectionBg + padToWidth(line, cols - dateVisible) + dateStr + ANSI.reset);
+          process.stdout.write(t.selectionBg + padToWidth(line, cols - rightVisible) + rightStr + ANSI.reset);
         } else {
           const line = `${num}${t.text}${title}${ANSI.reset}`;
-          process.stdout.write(padToWidth(line, cols - dateVisible) + dateStr + ANSI.reset);
+          process.stdout.write(padToWidth(line, cols - rightVisible) + rightStr + ANSI.reset);
         }
       }
     }

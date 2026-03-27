@@ -36418,7 +36418,7 @@ async function convertDocx(buffer, source, hash) {
   const nodeBuffer = Buffer.from(buffer);
   const result = await import_mammoth.default.convertToHtml({ buffer: nodeBuffer });
   const fullHtml = result.value;
-  const chapters = splitAtH1(fullHtml, fileBasename);
+  const chapters = buildHierarchicalChapters(fullHtml, fileBasename);
   const title = chapters.length > 0 && chapters[0].title !== fileBasename ? chapters[0].title : fileBasename;
   const plainText = htmlToPlainText(fullHtml);
   const images = extractImages(fullHtml);
@@ -36432,39 +36432,89 @@ async function convertDocx(buffer, source, hash) {
     images: images.size > 0 ? images : undefined
   };
 }
-function splitAtH1(html, fallbackTitle) {
-  const h1Regex = /(<h1[^>]*>[\s\S]*?<\/h1>)/gi;
-  const parts = html.split(h1Regex);
+function extractHeadings(html) {
+  const headings = [];
+  for (let level = 1;level <= 6; level++) {
+    const tagName = `h${level}`;
+    const openRegex = new RegExp(`<${tagName}(?:\\s[^>]*)?>`, "gi");
+    const closeRegex = new RegExp(`</${tagName}>`, "i");
+    let openMatch;
+    while ((openMatch = openRegex.exec(html)) !== null) {
+      const openPos = openMatch.index;
+      const closeMatch = closeRegex.exec(html.substring(openPos));
+      if (closeMatch) {
+        const closePos = openPos + closeMatch.index + closeMatch[0].length;
+        const fullTag = html.substring(openPos, closePos);
+        const title = htmlToPlainText(fullTag).trim();
+        headings.push({
+          level,
+          title,
+          html: fullTag,
+          position: openPos
+        });
+        openRegex.lastIndex = closePos;
+      }
+    }
+  }
+  headings.sort((a, b) => a.position - b.position);
+  return headings;
+}
+function buildHierarchicalChapters(html, fallbackTitle) {
+  const headings = extractHeadings(html);
+  if (headings.length === 0) {
+    return [
+      {
+        title: fallbackTitle,
+        html,
+        text: htmlToPlainText(html),
+        index: 0
+      }
+    ];
+  }
   const chapters = [];
   let chapterIndex = 0;
-  const preamble = parts[0]?.trim();
+  const firstHeadingPos = headings[0]?.position ?? 0;
+  const preamble = firstHeadingPos > 0 ? html.substring(0, firstHeadingPos).trim() : "";
   if (preamble) {
     chapters.push({
       title: fallbackTitle,
       html: preamble,
       text: htmlToPlainText(preamble),
-      index: chapterIndex++
+      index: chapterIndex++,
+      level: 1,
+      children: []
     });
   }
-  for (let i = 1;i < parts.length; i += 2) {
-    const h1Tag = parts[i] ?? "";
-    const content = parts[i + 1] ?? "";
-    const headingText = htmlToPlainText(h1Tag).trim();
-    const chapterHtml = h1Tag + content;
-    chapters.push({
-      title: headingText || fallbackTitle,
+  const parentStack = [];
+  for (let i = 0;i < headings.length; i++) {
+    const heading = headings[i];
+    const nextHeading = headings[i + 1];
+    const contentStart = heading.position + heading.html.length;
+    const contentEnd = nextHeading ? nextHeading.position : html.length;
+    const headingContent = html.substring(contentStart, contentEnd);
+    const chapterHtml = heading.html + headingContent;
+    while (parentStack.length > 0 && parentStack.length >= heading.level) {
+      parentStack.pop();
+    }
+    const parentIndex = parentStack.length > 0 ? parentStack[parentStack.length - 1] : undefined;
+    const chapter = {
+      title: heading.title || fallbackTitle,
       html: chapterHtml,
       text: htmlToPlainText(chapterHtml),
-      index: chapterIndex++
-    });
-  }
-  if (chapters.length === 0) {
-    chapters.push({
-      title: fallbackTitle,
-      html,
-      text: htmlToPlainText(html),
-      index: 0
-    });
+      index: chapterIndex,
+      level: heading.level,
+      parentIndex,
+      children: []
+    };
+    if (parentIndex !== undefined && chapters[parentIndex]) {
+      if (!chapters[parentIndex].children) {
+        chapters[parentIndex].children = [];
+      }
+      chapters[parentIndex].children.push(chapterIndex);
+    }
+    chapters.push(chapter);
+    parentStack.push(chapterIndex);
+    chapterIndex++;
   }
   return chapters;
 }
@@ -36497,13 +36547,11 @@ async function convertFb2(buffer, source, hash) {
       const html = convertFb2NodeToHtml(body.innerHTML);
       const text = htmlToPlainText(html);
       const title = extractSectionTitle(body.innerHTML) || docTitle;
-      chapters.push({ title, html, text, index: chapterIndex++ });
+      chapters.push({ title, html, text, index: chapterIndex++, level: 1, children: [] });
     } else {
       for (const section of sections) {
-        const html = convertFb2NodeToHtml(section.innerHTML);
-        const text = htmlToPlainText(html);
-        const title = extractSectionTitle(section.innerHTML) || docTitle;
-        chapters.push({ title, html, text, index: chapterIndex++ });
+        extractSectionsRecursive(section, chapters, chapterIndex, 1, undefined);
+        chapterIndex = chapters.length;
       }
     }
   }
@@ -36525,6 +36573,36 @@ async function convertFb2(buffer, source, hash) {
     chapters,
     images: images.size > 0 ? images : undefined
   };
+}
+function extractSectionsRecursive(sectionEl, chapters, currentIndex, level, parentIndex) {
+  const childSections = sectionEl.querySelectorAll(":scope > section");
+  let html = convertFb2NodeToHtml(sectionEl.innerHTML);
+  for (const childSection of childSections) {
+    const childHtml = childSection.outerHTML || `<section>${childSection.innerHTML}</section>`;
+    html = html.replace(childHtml, "");
+  }
+  const text = htmlToPlainText(html);
+  const title = extractSectionTitle(html) || `Section ${currentIndex + 1}`;
+  const children = [];
+  const chapterIdx = chapters.length;
+  chapters.push({
+    title,
+    html,
+    text,
+    index: chapterIdx,
+    level,
+    parentIndex,
+    children
+  });
+  for (const childSection of childSections) {
+    const childStartIdx = chapters.length;
+    extractSectionsRecursive(childSection, chapters, childStartIdx, level + 1, chapterIdx);
+    for (let i = childStartIdx;i < chapters.length; i++) {
+      if (chapters[i].parentIndex === chapterIdx) {
+        children.push(i);
+      }
+    }
+  }
 }
 function convertFb2NodeToHtml(fb2Inner) {
   let html = fb2Inner;
@@ -38529,7 +38607,7 @@ import path4 from "path";
 async function convertMarkdown(text, source, hash) {
   const fileBasename = source !== "stdin" ? path4.basename(source, path4.extname(source)) : "stdin";
   const fullHtml = await marked(text);
-  const chapters = splitAtH12(fullHtml, fileBasename);
+  const chapters = splitAtH1(fullHtml, fileBasename);
   const title = chapters.length > 0 && chapters[0].title !== fileBasename ? chapters[0].title : fileBasename;
   const plainText = htmlToPlainText(fullHtml);
   const images = extractImages(fullHtml);
@@ -38543,40 +38621,93 @@ async function convertMarkdown(text, source, hash) {
     images: images.size > 0 ? images : undefined
   };
 }
-function splitAtH12(html, fallbackTitle) {
-  const h1Regex = /(<h1[^>]*>[\s\S]*?<\/h1>)/gi;
-  const parts = html.split(h1Regex);
+function splitAtH1(html, fallbackTitle) {
+  const headings = extractHeadings2(html);
+  if (headings.length === 0) {
+    return [
+      {
+        title: fallbackTitle,
+        html,
+        text: htmlToPlainText(html),
+        index: 0
+      }
+    ];
+  }
+  const chapters = buildHierarchicalChapters2(html, headings, fallbackTitle);
+  return chapters;
+}
+function extractHeadings2(html) {
+  const headings = [];
+  for (let level = 1;level <= 6; level++) {
+    const tagName = `h${level}`;
+    const openRegex = new RegExp(`<${tagName}(?:\\s[^>]*)?>`, "gi");
+    const closeRegex = new RegExp(`</${tagName}>`, "i");
+    let openMatch;
+    while ((openMatch = openRegex.exec(html)) !== null) {
+      const openPos = openMatch.index;
+      const closeMatch = closeRegex.exec(html.substring(openPos));
+      if (closeMatch) {
+        const closePos = openPos + closeMatch.index + closeMatch[0].length;
+        const fullTag = html.substring(openPos, closePos);
+        const title = htmlToPlainText(fullTag).trim();
+        headings.push({
+          level,
+          title,
+          html: fullTag,
+          position: openPos
+        });
+        openRegex.lastIndex = closePos;
+      }
+    }
+  }
+  headings.sort((a, b) => a.position - b.position);
+  return headings;
+}
+function buildHierarchicalChapters2(html, headings, fallbackTitle) {
   const chapters = [];
   let chapterIndex = 0;
-  const preamble = parts[0]?.trim();
+  const firstHeadingPos = headings[0]?.position ?? 0;
+  const preamble = firstHeadingPos > 0 ? html.substring(0, firstHeadingPos).trim() : "";
   if (preamble) {
-    const preambleHtml = preamble;
     chapters.push({
       title: fallbackTitle,
-      html: preambleHtml,
-      text: htmlToPlainText(preambleHtml),
-      index: chapterIndex++
+      html: preamble,
+      text: htmlToPlainText(preamble),
+      index: chapterIndex++,
+      level: 1,
+      children: []
     });
   }
-  for (let i = 1;i < parts.length; i += 2) {
-    const h1Tag = parts[i] ?? "";
-    const content = parts[i + 1] ?? "";
-    const headingText = htmlToPlainText(h1Tag).trim();
-    const chapterHtml = h1Tag + content;
-    chapters.push({
-      title: headingText || fallbackTitle,
+  const parentStack = [];
+  for (let i = 0;i < headings.length; i++) {
+    const heading = headings[i];
+    const nextHeading = headings[i + 1];
+    const contentStart = heading.position + heading.html.length;
+    const contentEnd = nextHeading ? nextHeading.position : html.length;
+    const headingContent = html.substring(contentStart, contentEnd);
+    const chapterHtml = heading.html + headingContent;
+    while (parentStack.length > 0 && parentStack.length >= heading.level) {
+      parentStack.pop();
+    }
+    const parentIndex = parentStack.length > 0 ? parentStack[parentStack.length - 1] : undefined;
+    const chapter = {
+      title: heading.title || fallbackTitle,
       html: chapterHtml,
       text: htmlToPlainText(chapterHtml),
-      index: chapterIndex++
-    });
-  }
-  if (chapters.length === 0) {
-    chapters.push({
-      title: fallbackTitle,
-      html,
-      text: htmlToPlainText(html),
-      index: 0
-    });
+      index: chapterIndex,
+      level: heading.level,
+      parentIndex,
+      children: []
+    };
+    if (parentIndex !== undefined && chapters[parentIndex]) {
+      if (!chapters[parentIndex].children) {
+        chapters[parentIndex].children = [];
+      }
+      chapters[parentIndex].children.push(chapterIndex);
+    }
+    chapters.push(chapter);
+    parentStack.push(chapterIndex);
+    chapterIndex++;
   }
   return chapters;
 }
@@ -38762,7 +38893,7 @@ async function deleteBook(hash) {
   delete store[hash];
   await saveHistory(store);
 }
-async function updateLastPosition(hash, position, source, title) {
+async function updateLastPosition(hash, position, source, title, totalPages) {
   const store = await loadHistory();
   if (!store[hash]) {
     store[hash] = {
@@ -38770,7 +38901,8 @@ async function updateLastPosition(hash, position, source, title) {
       lastPosition: position,
       lastRead: new Date().toISOString(),
       source: source ?? "",
-      title: title ?? ""
+      title: title ?? "",
+      lastTotalPages: totalPages
     };
   } else {
     store[hash].lastPosition = position;
@@ -38779,6 +38911,8 @@ async function updateLastPosition(hash, position, source, title) {
       store[hash].source = source;
     if (title)
       store[hash].title = title;
+    if (totalPages !== undefined)
+      store[hash].lastTotalPages = totalPages;
   }
   await saveHistory(store);
 }
@@ -38931,7 +39065,7 @@ class PageView {
     const imageHint = hasImages ? " [i]mage" : "";
     let hintsText;
     if (!selection) {
-      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search${imageHint} [q]uit [?]help`;
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       hintsText = `"${selection.wordText}" \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
@@ -39032,7 +39166,7 @@ class PageView {
     const bmLabel = this.state.isBookmarked ? "[b]ookmarked \u25C6" : "[b]ookmark";
     let hintsText;
     if (!selection) {
-      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search [q]uit [?]help`;
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       hintsText = `"${selection.wordText}" \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
@@ -39081,6 +39215,8 @@ class PageView {
         return "escape";
       case "t":
         return "tts";
+      case "T":
+        return "toc";
       case "B":
         return "bookmarks";
       case "i":
@@ -39585,10 +39721,40 @@ async function showBookmarks(initialBookmarks, theme, onDelete) {
 // src/ui/books-list.ts
 init_terminal();
 init_themes();
-function formatDate2(iso) {
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function formatRelativeTime(iso) {
+  const now = new Date;
+  const then = new Date(iso);
+  const diffMs = now.getTime() - then.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+  if (diffSecs < 60)
+    return "just now";
+  if (diffMins < 60)
+    return `${diffMins}m ago`;
+  if (diffHours < 24)
+    return `${diffHours}h ago`;
+  if (diffDays < 7)
+    return `${diffDays}d ago`;
+  if (diffWeeks < 4)
+    return `${diffWeeks}w ago`;
+  if (diffMonths < 12)
+    return `${diffMonths}mo ago`;
+  return `${diffYears}y ago`;
+}
+function calculatePercentage(position, totalPages) {
+  if (!totalPages || totalPages <= 1)
+    return "\u2014";
+  const [type, value] = position.split(":");
+  if (type !== "page")
+    return "\u2014";
+  const pageNum = parseInt(value, 10);
+  const percent = Math.round(pageNum / (totalPages - 1) * 100);
+  return `${percent}%`;
 }
 function center3(str, width) {
   if (str.length >= width)
@@ -39635,19 +39801,19 @@ async function showBooksList(books, theme, onDelete, onBrowse) {
         const isSelected = itemIdx === selected;
         const num = `  ${String(itemIdx + 1).padStart(2)}.  `;
         const title = item.state.title || item.state.source;
-        const date = formatDate2(item.state.lastRead);
-        const dateStr = `  ${t.dim}${date}${ANSI.reset}  `;
-        const dateVisible = 2 + visLen4(date) + 2;
+        const percent = calculatePercentage(item.state.lastPosition, item.state.lastTotalPages);
+        const relTime = formatRelativeTime(item.state.lastRead);
+        const rightStr = `  ${t.dim}${percent} \xB7 ${relTime}${ANSI.reset}  `;
+        const rightVisible = 2 + visLen4(percent) + 3 + visLen4(relTime) + 2;
         const leftText = `${num}${title}`;
         const leftVisible = visLen4(leftText);
-        const gap = Math.max(1, cols - leftVisible - dateVisible);
         moveTo(listStart + i, 1);
         if (isSelected) {
           const line = `${num}${t.accent}${ANSI.bold}${title}${ANSI.reset}`;
-          process.stdout.write(t.selectionBg + padToWidth2(line, cols - dateVisible) + dateStr + ANSI.reset);
+          process.stdout.write(t.selectionBg + padToWidth2(line, cols - rightVisible) + rightStr + ANSI.reset);
         } else {
           const line = `${num}${t.text}${title}${ANSI.reset}`;
-          process.stdout.write(padToWidth2(line, cols - dateVisible) + dateStr + ANSI.reset);
+          process.stdout.write(padToWidth2(line, cols - rightVisible) + rightStr + ANSI.reset);
         }
       }
     }
@@ -39689,6 +39855,176 @@ async function showBooksList(books, theme, onDelete, onBrowse) {
         selected = Math.max(0, Math.min(selected, items.length - 1));
         render();
       }
+    }
+  }
+}
+// src/ui/toc-view.ts
+init_terminal();
+init_themes();
+function center4(str, width) {
+  if (str.length >= width)
+    return str.slice(0, width);
+  const pad = Math.floor((width - str.length) / 2);
+  return " ".repeat(pad) + str + " ".repeat(width - str.length - pad);
+}
+function visLen5(s) {
+  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+function padToWidth3(str, width) {
+  const vl = visLen5(str);
+  if (vl >= width)
+    return str;
+  return str + " ".repeat(width - vl);
+}
+function buildDisplayList(chapters, expandedState) {
+  const items = [];
+  function addItem(chapterIdx, baseIndent = 0) {
+    const chapter = chapters[chapterIdx];
+    if (!chapter)
+      return;
+    const level = chapter.level ?? 1;
+    const indent = baseIndent;
+    const hasChildren = (chapter.children?.length ?? 0) > 0;
+    const expanded = expandedState.has(chapterIdx);
+    const expandIcon = hasChildren ? expanded ? "\u25BC " : "\u25B6 " : "  ";
+    const displayLabel = `${expandIcon}${chapter.title}`;
+    items.push({
+      chapterIdx,
+      chapter,
+      level,
+      indent,
+      displayLabel,
+      expanded,
+      isVisible: true
+    });
+    if (hasChildren && expanded) {
+      for (const childIdx of chapter.children || []) {
+        addChildItem(childIdx, indent + 2);
+      }
+    }
+  }
+  function addChildItem(chapterIdx, baseIndent) {
+    const chapter = chapters[chapterIdx];
+    if (!chapter)
+      return;
+    const indent = baseIndent;
+    const hasChildren = (chapter.children?.length ?? 0) > 0;
+    const expanded = expandedState.has(chapterIdx);
+    const expandIcon = hasChildren ? expanded ? "\u25BC " : "\u25B6 " : "  ";
+    const displayLabel = `${expandIcon}${chapter.title}`;
+    items.push({
+      chapterIdx,
+      chapter,
+      level: chapter.level ?? 1,
+      indent,
+      displayLabel,
+      expanded,
+      isVisible: true
+    });
+    if (hasChildren && expanded) {
+      for (const childIdx of chapter.children || []) {
+        addChildItem(childIdx, indent + 2);
+      }
+    }
+  }
+  for (let i = 0;i < chapters.length; i++) {
+    const ch = chapters[i];
+    if (!ch.parentIndex) {
+      addItem(i, 0);
+    }
+  }
+  return items;
+}
+async function showToc(chapters, currentPageChapterIdx, theme) {
+  const t = themes[theme];
+  const expandedState = new Set;
+  for (let i = 0;i < chapters.length; i++) {
+    const ch = chapters[i];
+    if (!ch.parentIndex && ch.children && ch.children.length > 0) {
+      expandedState.add(i);
+    }
+  }
+  let displayItems = buildDisplayList(chapters, expandedState);
+  let selected = displayItems.findIndex((item) => item.chapterIdx === currentPageChapterIdx);
+  if (selected < 0)
+    selected = 0;
+  function render() {
+    const { cols, rows } = getTerminalSize();
+    clearScreen();
+    moveTo(2, 1);
+    process.stdout.write(t.accent + ANSI.bold + center4("\u2500\u2500 Table of Contents \u2500\u2500", cols) + ANSI.reset);
+    if (displayItems.length === 0) {
+      moveTo(4, 1);
+      process.stdout.write(t.dim + center4("No chapters.", cols) + ANSI.reset);
+    } else {
+      const listStart = 4;
+      const maxVisible = Math.max(1, rows - 6);
+      const scrollOffset = Math.max(0, Math.min(selected - Math.floor(maxVisible / 2), displayItems.length - maxVisible));
+      for (let i = 0;i < Math.min(maxVisible, displayItems.length); i++) {
+        const itemIdx = i + scrollOffset;
+        const item = displayItems[itemIdx];
+        if (!item)
+          break;
+        const isSelected = itemIdx === selected;
+        const isCurrent = item.chapterIdx === currentPageChapterIdx;
+        const indentStr = " ".repeat(item.indent);
+        const prefix = isCurrent ? `${t.accent}\u25B8${ANSI.reset} ` : "  ";
+        const label = `${prefix}${indentStr}${item.displayLabel}`;
+        moveTo(listStart + i, 1);
+        if (isSelected) {
+          process.stdout.write(t.selectionBg + padToWidth3(label, cols) + ANSI.reset);
+        } else {
+          process.stdout.write(padToWidth3(label, cols));
+        }
+      }
+    }
+    const { rows: r, cols: c } = getTerminalSize();
+    moveTo(r - 1, 1);
+    process.stdout.write(t.border + "\u2500".repeat(c) + ANSI.reset);
+    moveTo(r, 1);
+    if (displayItems.length > 0) {
+      process.stdout.write(t.dim + `\u2191\u2193 select  ` + ANSI.reset + t.dim + `\u2190\u2192 expand  ` + ANSI.reset + t.dim + `[enter] jump  ` + ANSI.reset + t.dim + `[q] back` + ANSI.reset);
+    } else {
+      process.stdout.write(t.dim + `[q] back` + ANSI.reset);
+    }
+  }
+  render();
+  while (true) {
+    const key = await readKey();
+    if (key === "escape" || key === "q" || key === "c")
+      return null;
+    if (displayItems.length === 0)
+      continue;
+    if (key === "up" || key === "k") {
+      selected = Math.max(0, selected - 1);
+      render();
+    } else if (key === "down" || key === "j") {
+      selected = Math.min(displayItems.length - 1, selected + 1);
+      render();
+    } else if (key === "right") {
+      const item = displayItems[selected];
+      if (item && (item.chapter.children?.length ?? 0) > 0 && !item.expanded) {
+        expandedState.add(item.chapterIdx);
+        displayItems = buildDisplayList(chapters, expandedState);
+        selected = Math.min(selected, displayItems.length - 1);
+        render();
+      }
+    } else if (key === "left") {
+      const item = displayItems[selected];
+      if (item && (item.chapter.children?.length ?? 0) > 0 && item.expanded) {
+        expandedState.delete(item.chapterIdx);
+        displayItems = buildDisplayList(chapters, expandedState);
+        selected = Math.min(selected, displayItems.length - 1);
+        render();
+      } else if (item && item.chapter.parentIndex !== undefined) {
+        const parentIdx = displayItems.findIndex((x) => x.chapterIdx === item.chapter.parentIndex);
+        if (parentIdx >= 0) {
+          selected = parentIdx;
+          render();
+        }
+      }
+    } else if (key === "enter") {
+      return displayItems[selected]?.chapterIdx ?? null;
     }
   }
 }
@@ -40270,14 +40606,14 @@ async function runSession(content, options2, initialPosition) {
             currentMode = newMode;
           }, () => {
             running = false;
-          }, () => resizePending);
+          }, () => resizePending, pages.length);
           break;
         case "speed":
           currentWord = await runSpeedMode(content, options2, chunks, words, currentWord, (newMode) => {
             currentMode = newMode;
           }, () => {
             running = false;
-          }, () => resizePending);
+          }, () => resizePending, pages.length);
           break;
         default:
           running = false;
@@ -40292,7 +40628,7 @@ async function runSession(content, options2, initialPosition) {
       } else {
         finalPos = { type: "page", page: currentPage };
       }
-      await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title).catch(() => {});
+      await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title, pages.length).catch(() => {});
     }
   } finally {
     process.stdout.off("resize", onResize);
@@ -40492,7 +40828,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
         view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
         view.render();
         if (!options2.noSave) {
-          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
+          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage }), undefined, undefined, pages.length).catch(() => {});
         }
       } else if (action === "prev") {
         const step = getTerminalSize().cols >= SPREAD_MIN_COLS ? 2 : 1;
@@ -40503,7 +40839,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
         view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
         view.render();
         if (!options2.noSave) {
-          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
+          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage }), undefined, undefined, pages.length).catch(() => {});
         }
       } else if (action === "bookmark") {
         let pos;
@@ -40642,6 +40978,17 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
             view.render();
           }
         }
+      } else if (action === "toc") {
+        const selectedChapterIdx = await showToc(content.chapters, pages[currentPage]?.chapterIndex ?? 0, options2.theme);
+        if (selectedChapterIdx !== null) {
+          const targetPage = pages.findIndex((p) => p.chapterIndex === selectedChapterIdx);
+          if (targetPage !== -1) {
+            currentPage = targetPage;
+            selection = null;
+            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
+          }
+        }
+        view.render();
       } else if (typeof action === "object" && action !== null && action.type === "click") {
         const { cols, rows } = getTerminalSize();
         const contentRows = rows - 4;
@@ -40730,7 +41077,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
     disableMouseTracking();
   }
 }
-async function runScrollMode(content, options2, allLines, startOffset, switchMode, quit, isResizePending) {
+async function runScrollMode(content, options2, allLines, startOffset, switchMode, quit, isResizePending, totalPages) {
   let offset = startOffset;
   let bookmarkCount = 0;
   const { rows } = getTerminalSize();
@@ -40758,28 +41105,28 @@ async function runScrollMode(content, options2, allLines, startOffset, switchMod
       view.updateState({ offset });
       view.render();
       if (!options2.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "scroll-up") {
       offset = clamp(offset - 1, 0, currentMax);
       view.updateState({ offset });
       view.render();
       if (!options2.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "page-down") {
       offset = clamp(offset + currentContentRows, 0, currentMax);
       view.updateState({ offset });
       view.render();
       if (!options2.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "page-up") {
       offset = clamp(offset - currentContentRows, 0, currentMax);
       view.updateState({ offset });
       view.render();
       if (!options2.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "bookmark") {
       await addBookmark(content.hash, {
@@ -40802,7 +41149,7 @@ async function runScrollMode(content, options2, allLines, startOffset, switchMod
     }
   }
 }
-async function runSpeedMode(content, options2, initialChunks, words, startWord, switchMode, quit, isResizePending) {
+async function runSpeedMode(content, options2, initialChunks, words, startWord, switchMode, quit, isResizePending, totalPages) {
   if (initialChunks.length === 0) {
     quit();
     return 0;
@@ -40874,7 +41221,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
           view.render();
           syncTts();
           if (!options2.noSave) {
-            updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() })).catch(() => {});
+            updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() }), undefined, undefined, totalPages).catch(() => {});
           }
         } else {
           paused = true;
@@ -40908,7 +41255,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       view.render();
       syncTts();
       if (!options2.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "prev") {
       currentChunk = clamp(currentChunk - 1, 0, chunks.length - 1);
@@ -40916,7 +41263,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       view.render();
       syncTts();
       if (!options2.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "skip-sentence-fwd") {
       const wordsPerChunk = Math.max(1, chunkSize);
@@ -41070,7 +41417,7 @@ Error during browse: ${msg}
             const { buffer, source } = await readFromFile(book.state.source);
             const format = detectFormat(source, buffer);
             const content = await convertToContent(source, buffer, format);
-            const state = await getFileState(content.hash);
+            const state = await getFileState(book.hash);
             const initialPosition = state?.lastPosition;
             const options2 = {
               mode: "page",

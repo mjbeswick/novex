@@ -100,6 +100,7 @@ export interface FileState {
   lastRead: string;
   source: string;
   title: string;
+  lastTotalPages?: number;
 }
 
 export interface HistoryStore {

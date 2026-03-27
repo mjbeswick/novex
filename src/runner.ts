@@ -289,7 +289,8 @@ export async function runSession(
             content, options, allLines, currentScroll,
             (newMode) => { currentMode = newMode; },
             () => { running = false; },
-            () => resizePending
+            () => resizePending,
+            pages.length
           );
           break;
 
@@ -298,7 +299,8 @@ export async function runSession(
             content, options, chunks, words, currentWord,
             (newMode) => { currentMode = newMode; },
             () => { running = false; },
-            () => resizePending
+            () => resizePending,
+            pages.length
           );
           break;
 
@@ -317,7 +319,7 @@ export async function runSession(
       } else {
         finalPos = { type: "page", page: currentPage };
       }
-      await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title).catch(() => {});
+      await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title, pages.length).catch(() => {});
     }
   } finally {
     process.stdout.off("resize", onResize);
@@ -572,7 +574,7 @@ async function runPageMode(
         view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
         view.render();
         if (!options.noSave) {
-          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
+          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage }), undefined, undefined, pages.length).catch(() => {});
         }
       } else if (action === "prev") {
         const step = getTerminalSize().cols >= SPREAD_MIN_COLS ? 2 : 1;
@@ -582,7 +584,7 @@ async function runPageMode(
         view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
         view.render();
         if (!options.noSave) {
-          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
+          updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage }), undefined, undefined, pages.length).catch(() => {});
         }
       } else if (action === "bookmark") {
         let pos: string;
@@ -849,7 +851,8 @@ async function runScrollMode(
   startOffset: number,
   switchMode: (m: ReadingMode) => void,
   quit: () => void,
-  isResizePending: () => boolean
+  isResizePending: () => boolean,
+  totalPages: number
 ): Promise<number> {
   let offset = startOffset;
   let bookmarkCount = 0;
@@ -883,28 +886,28 @@ async function runScrollMode(
       view.updateState({ offset });
       view.render();
       if (!options.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "scroll-up") {
       offset = clamp(offset - 1, 0, currentMax);
       view.updateState({ offset });
       view.render();
       if (!options.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "page-down") {
       offset = clamp(offset + currentContentRows, 0, currentMax);
       view.updateState({ offset });
       view.render();
       if (!options.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "page-up") {
       offset = clamp(offset - currentContentRows, 0, currentMax);
       view.updateState({ offset });
       view.render();
       if (!options.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "scroll", offset })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "scroll", offset }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "bookmark") {
       await addBookmark(content.hash, {
@@ -938,7 +941,8 @@ async function runSpeedMode(
   startWord: number,
   switchMode: (m: ReadingMode) => void,
   quit: () => void,
-  isResizePending: () => boolean
+  isResizePending: () => boolean,
+  totalPages: number
 ): Promise<number> {
   if (initialChunks.length === 0) {
     quit();
@@ -1020,7 +1024,7 @@ async function runSpeedMode(
           view.render();
           syncTts();
           if (!options.noSave) {
-            updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() })).catch(() => {});
+            updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() }), undefined, undefined, totalPages).catch(() => {});
           }
         } else {
           // Reached end — pause at last chunk
@@ -1053,7 +1057,7 @@ async function runSpeedMode(
       view.render();
       syncTts();
       if (!options.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "prev") {
       currentChunk = clamp(currentChunk - 1, 0, chunks.length - 1);
@@ -1061,7 +1065,7 @@ async function runSpeedMode(
       view.render();
       syncTts();
       if (!options.noSave) {
-        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() })).catch(() => {});
+        updateLastPosition(content.hash, positionToString({ type: "word", index: getCurrentWordIndex() }), undefined, undefined, totalPages).catch(() => {});
       }
     } else if (action === "skip-sentence-fwd") {
       const wordsPerChunk = Math.max(1, chunkSize);
