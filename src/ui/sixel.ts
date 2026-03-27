@@ -55,14 +55,16 @@ export interface PreparedImage {
  */
 export async function prepareInlineImage(
   imageData: Buffer | string,
-  heightRows: number = 15
+  heightRows: number = 15,
+  maxWidthCols?: number
 ): Promise<PreparedImage | null> {
   try {
     const imageBuffer = toBuffer(imageData);
 
     if (isITerm()) {
       const base64 = imageBuffer.toString("base64");
-      const escape = `\x1b]1337;File=inline=1;height=${heightRows};preserveAspectRatio=1:${base64}\x07`;
+      const widthParam = maxWidthCols ? `;width=${maxWidthCols}` : "";
+      const escape = `\x1b]1337;File=inline=1;height=${heightRows}${widthParam};preserveAspectRatio=1:${base64}\x07`;
       return { escape, rows: heightRows };
     }
 

@@ -224,9 +224,11 @@ export async function runSession(
   // Prepare cover image for inline display
   const pageHeight = Math.max(1, rows - 4);
   const coverImageRows = Math.min(15, Math.floor(pageHeight * 0.4));
+  const isSpread = cols >= SPREAD_MIN_COLS;
+  const maxImageWidth = isSpread ? Math.floor((cols - 3) / 2) : cols;
   let preparedCover: PreparedImage | null = null;
   if (content.coverImage) {
-    preparedCover = await prepareInlineImage(content.coverImage, coverImageRows);
+    preparedCover = await prepareInlineImage(content.coverImage, coverImageRows, maxImageWidth);
   }
 
   // Build pages
