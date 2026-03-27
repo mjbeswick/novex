@@ -277,7 +277,9 @@ export async function runSession(
             words,
             chunks,
             (idx) => { currentWord = idx; },
-            () => resizePending
+            () => resizePending,
+            currentWord,
+            words
           );
           break;
 
@@ -379,6 +381,78 @@ function findWordApprox(
   return null;
 }
 
+/**
+ * Creates a SelectionState for a word at the given index.
+ * Finds the word's position on the page and returns proper selection info.
+ */
+function createSelectionFromWordIndex(
+  wordIdx: number,
+  allWords: ReturnType<typeof extractWords>,
+  pages: ReturnType<typeof buildPages>
+): SelectionState | null {
+  const word = allWords[wordIdx];
+  if (!word) return null;
+
+  // Find which page this word appears on (approximate by word distribution)
+  let targetPageIdx = 0;
+  if (pages.length > 1) {
+    targetPageIdx = Math.round((wordIdx / allWords.length) * (pages.length - 1));
+    targetPageIdx = Math.max(0, Math.min(targetPageIdx, pages.length - 1));
+  }
+
+  // Search nearby pages for the word
+  for (let offset = 0; offset < pages.length; offset++) {
+    const pageIdx = targetPageIdx + (offset % 2 === 0 ? offset / 2 : -Math.ceil(offset / 2));
+    if (pageIdx < 0 || pageIdx >= pages.length) continue;
+
+    const page = pages[pageIdx];
+    const lines = page?.lines ?? [];
+    const groups = getParagraphGroups(lines);
+
+    // Search lines for this word
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const ansiLine = lines[lineIdx];
+      const w = wordAtColumn(ansiLine, 0); // Start from column 0
+      if (w && w.text.toLowerCase() === word.text.toLowerCase()) {
+        // Found a matching word, create selection
+        let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
+        if (!para) para = { start: lineIdx, end: lineIdx };
+
+        // Find exact column position
+        const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+        const re = /\S+/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(stripped)) !== null) {
+          if (m.index <= lineIdx && m.index + m[0].length > lineIdx) {
+            return {
+              pageIndex: pageIdx,
+              paraStart: para.start,
+              paraEnd: para.end,
+              wordText: word.text,
+              wordIndex: wordIdx,
+              wordLine: lineIdx,
+              wordColStart: m.index,
+              wordColEnd: m.index + m[0].length - 1,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback: create selection without exact position
+  return {
+    pageIndex: targetPageIdx,
+    paraStart: 0,
+    paraEnd: 0,
+    wordText: word.text,
+    wordIndex: wordIdx,
+    wordLine: null,
+    wordColStart: null,
+    wordColEnd: null,
+  };
+}
+
 // ── Page mode ─────────────────────────────────────────────────────────────────
 
 async function runPageMode(
@@ -391,10 +465,20 @@ async function runPageMode(
   allWords: ReturnType<typeof extractWords>,
   _chunks: ReturnType<typeof chunkWords>,
   setCurrentWord: (idx: number) => void,
-  isResizePending: () => boolean
+  isResizePending: () => boolean,
+  initialWordIndex: number | null = null,
+  allWordsForSelection: ReturnType<typeof extractWords> = allWords
 ): Promise<number> {
   let currentPage = startPage;
+
+  // If returning from speed mode, create selection from the word that was being read
   let selection: SelectionState | null = null;
+  if (initialWordIndex !== null) {
+    selection = createSelectionFromWordIndex(initialWordIndex, allWordsForSelection, pages);
+    if (selection) {
+      currentPage = clamp(selection.pageIndex, 0, pages.length - 1);
+    }
+  }
 
   // Load bookmarks once; keep a local mirror for quick access
   const initState = await getFileState(content.hash).catch(() => null);
@@ -463,8 +547,8 @@ async function runPageMode(
     bookmarkCount: localBookmarks.length,
     chapterTitle: getChapterTitle(),
     title: content.title,
-    selection: null,
-    isBookmarked: checkIsBookmarked(null),
+    selection,
+    isBookmarked: checkIsBookmarked(selection),
     images: content.images,
     ...bookmarkLineState(),
   });
@@ -529,6 +613,7 @@ async function runPageMode(
         view.render();
       } else if (action === "speed") {
         if (selection?.wordIndex != null) {
+          // Word is selected: start from selected word
           setCurrentWord(selection.wordIndex);
         } else if (selection != null) {
           // Paragraph selected: scan lines of the para for the first matchable word.
@@ -542,6 +627,19 @@ async function runPageMode(
             while ((m = re.exec(stripped)) !== null) {
               const found = findWordApprox(m[0], allWords, selection.pageIndex, pages.length);
               if (found) { setCurrentWord(found.index); break outer; }
+            }
+          }
+        } else {
+          // No selection: start from first word of current page
+          const curPage = pages[currentPage];
+          if (curPage && curPage.lines.length > 0) {
+            const firstLine = curPage.lines[0];
+            const stripped = firstLine.replace(/\x1b\[[0-9;]*m/g, "");
+            const re = /\S+/g;
+            const m = re.exec(stripped);
+            if (m) {
+              const found = findWordApprox(m[0], allWords, currentPage, pages.length);
+              if (found) setCurrentWord(found.index);
             }
           }
         }

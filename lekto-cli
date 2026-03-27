@@ -40263,7 +40263,7 @@ async function runSession(content, options2, initialPosition) {
             running = false;
           }, words, chunks, (idx) => {
             currentWord = idx;
-          }, () => resizePending);
+          }, () => resizePending, currentWord, words);
           break;
         case "scroll":
           currentScroll = await runScrollMode(content, options2, allLines, currentScroll, (newMode) => {
@@ -40345,9 +40345,69 @@ function findWordApprox(text, allWords, currentPage, totalPages) {
       return allWords[i];
   return null;
 }
-async function runPageMode(content, options2, pages, startPage, switchMode, quit, allWords, _chunks, setCurrentWord, isResizePending) {
+function createSelectionFromWordIndex(wordIdx, allWords, pages) {
+  const word = allWords[wordIdx];
+  if (!word)
+    return null;
+  let targetPageIdx = 0;
+  if (pages.length > 1) {
+    targetPageIdx = Math.round(wordIdx / allWords.length * (pages.length - 1));
+    targetPageIdx = Math.max(0, Math.min(targetPageIdx, pages.length - 1));
+  }
+  for (let offset = 0;offset < pages.length; offset++) {
+    const pageIdx = targetPageIdx + (offset % 2 === 0 ? offset / 2 : -Math.ceil(offset / 2));
+    if (pageIdx < 0 || pageIdx >= pages.length)
+      continue;
+    const page = pages[pageIdx];
+    const lines = page?.lines ?? [];
+    const groups = getParagraphGroups(lines);
+    for (let lineIdx = 0;lineIdx < lines.length; lineIdx++) {
+      const ansiLine = lines[lineIdx];
+      const w = wordAtColumn(ansiLine, 0);
+      if (w && w.text.toLowerCase() === word.text.toLowerCase()) {
+        let para = groups.find((g) => lineIdx >= g.start && lineIdx <= g.end);
+        if (!para)
+          para = { start: lineIdx, end: lineIdx };
+        const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+        const re = /\S+/g;
+        let m;
+        while ((m = re.exec(stripped)) !== null) {
+          if (m.index <= lineIdx && m.index + m[0].length > lineIdx) {
+            return {
+              pageIndex: pageIdx,
+              paraStart: para.start,
+              paraEnd: para.end,
+              wordText: word.text,
+              wordIndex: wordIdx,
+              wordLine: lineIdx,
+              wordColStart: m.index,
+              wordColEnd: m.index + m[0].length - 1
+            };
+          }
+        }
+      }
+    }
+  }
+  return {
+    pageIndex: targetPageIdx,
+    paraStart: 0,
+    paraEnd: 0,
+    wordText: word.text,
+    wordIndex: wordIdx,
+    wordLine: null,
+    wordColStart: null,
+    wordColEnd: null
+  };
+}
+async function runPageMode(content, options2, pages, startPage, switchMode, quit, allWords, _chunks, setCurrentWord, isResizePending, initialWordIndex = null, allWordsForSelection = allWords) {
   let currentPage = startPage;
   let selection = null;
+  if (initialWordIndex !== null) {
+    selection = createSelectionFromWordIndex(initialWordIndex, allWordsForSelection, pages);
+    if (selection) {
+      currentPage = clamp(selection.pageIndex, 0, pages.length - 1);
+    }
+  }
   const initState = await getFileState(content.hash).catch(() => null);
   let localBookmarks = initState?.bookmarks ?? [];
   const getChapterTitle = () => {
@@ -40412,8 +40472,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
     bookmarkCount: localBookmarks.length,
     chapterTitle: getChapterTitle(),
     title: content.title,
-    selection: null,
-    isBookmarked: checkIsBookmarked(null),
+    selection,
+    isBookmarked: checkIsBookmarked(selection),
     images: content.images,
     ...bookmarkLineState()
   });
@@ -40491,6 +40551,19 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 }
               }
             }
+        } else {
+          const curPage = pages[currentPage];
+          if (curPage && curPage.lines.length > 0) {
+            const firstLine = curPage.lines[0];
+            const stripped = firstLine.replace(/\x1b\[[0-9;]*m/g, "");
+            const re = /\S+/g;
+            const m = re.exec(stripped);
+            if (m) {
+              const found = findWordApprox(m[0], allWords, currentPage, pages.length);
+              if (found)
+                setCurrentWord(found.index);
+            }
+          }
         }
         switchMode("speed");
         return currentPage;
