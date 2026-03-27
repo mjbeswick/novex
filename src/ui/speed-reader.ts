@@ -272,17 +272,6 @@ export class SpeedReader {
     moveTo(spritzRow + 3, 1); process.stdout.write(makeBorder("┴"));
     moveTo(spritzRow + 4, 1); process.stdout.write(tickLine);
 
-    if (currentWordObj && text) {
-      const { lines, sentenceText, highlightLine } = buildSentenceLines(text, currentWordObj, boxWidth, t);
-      this.lastSentenceText = sentenceText;
-      this.lastHighlightLine = highlightLine;
-      const sentStart = spritzRow + 6;
-      for (let i = 0; i < 3; i++) {
-        moveTo(sentStart + i, 1);
-        process.stdout.write(i < lines.length ? centerPad(lines[i], cols) : " ".repeat(cols));
-      }
-    }
-
     moveTo(rows - 2, 1);
     process.stdout.write(
       t.dim +
@@ -306,18 +295,8 @@ export class SpeedReader {
     moveTo(spritzRow + 2, 1);
     process.stdout.write(this._buildWordLine(word, orp, wordStart, t, cols));
 
-    // Update sentence context and header
+    // Update header
     this._writeHeader(this._buildHeaderText(this.getProgress()), spritzRow, cols, t);
-    if (currentWordObj && text) {
-      const { lines, sentenceText, highlightLine } = buildSentenceLines(text, currentWordObj, boxWidth, t);
-      this.lastSentenceText = sentenceText;
-      this.lastHighlightLine = highlightLine;
-      const sentStart = spritzRow + 6;
-      for (let i = 0; i < 3; i++) {
-        moveTo(sentStart + i, 1);
-        process.stdout.write(i < lines.length ? centerPad(lines[i], cols) : " ".repeat(cols));
-      }
-    }
   }
 
   handleKey(

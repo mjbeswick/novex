@@ -39203,84 +39203,6 @@ function orpIndex(word) {
     return 3;
   return 4;
 }
-function splitSentences(text) {
-  const result = [];
-  const re = /[.!?]+(?:\s+|$)/g;
-  let last = 0;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const end = m.index + m[0].length;
-    result.push({ text: text.slice(last, end).trim(), start: last, end });
-    last = end;
-  }
-  if (last < text.length) {
-    result.push({ text: text.slice(last).trim(), start: last, end: text.length });
-  }
-  return result;
-}
-function wrapWordsTracked(text, width) {
-  const re = /\S+/g;
-  const allTokens = [];
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    allTokens.push({ word: m[0], srcOffset: m.index });
-  }
-  const lines = [];
-  let curTokens = [];
-  const flush = () => {
-    if (curTokens.length === 0)
-      return;
-    let lineOffset = 0;
-    const tokens = curTokens.map((tk) => {
-      const entry = { word: tk.word, srcOffset: tk.srcOffset, lineOffset };
-      lineOffset += tk.word.length + 1;
-      return entry;
-    });
-    lines.push({ text: curTokens.map((tk) => tk.word).join(" "), tokens });
-    curTokens = [];
-  };
-  for (const token of allTokens) {
-    if (curTokens.length === 0) {
-      curTokens = [token];
-    } else {
-      const curLen = curTokens.reduce((n, tk) => n + tk.word.length, 0) + (curTokens.length - 1);
-      if (curLen + 1 + token.word.length <= width) {
-        curTokens.push(token);
-      } else {
-        flush();
-        curTokens = [token];
-      }
-    }
-  }
-  flush();
-  return lines;
-}
-function buildSentenceLines(fullText, currentWord, boxWidth, t) {
-  const sentences = splitSentences(fullText);
-  const charOff = currentWord.charOffset;
-  const sentence = sentences.find((s) => charOff >= s.start && charOff < s.end);
-  if (!sentence)
-    return { lines: [], sentenceText: "", highlightLine: -1 };
-  const rawSlice = fullText.slice(sentence.start, sentence.end);
-  const leadingStripped = rawSlice.length - rawSlice.trimStart().length;
-  const wordOffsetInSentence = charOff - sentence.start - leadingStripped;
-  const wrappedLines = wrapWordsTracked(sentence.text, boxWidth);
-  const wordText = currentWord.text;
-  let highlightLine = -1;
-  const lines = wrappedLines.slice(0, 3).map(({ text: line, tokens }, i) => {
-    if (highlightLine === -1) {
-      const tok = tokens.find((tk) => tk.srcOffset === wordOffsetInSentence);
-      if (tok) {
-        highlightLine = i;
-        const idx = tok.lineOffset;
-        return t.dim + line.slice(0, idx) + ANSI.reset + "\x1B[4m" + line.slice(idx, idx + wordText.length) + ANSI.reset + t.dim + line.slice(idx + wordText.length) + ANSI.reset;
-      }
-    }
-    return t.dim + line + ANSI.reset;
-  });
-  return { lines, sentenceText: sentence.text, highlightLine };
-}
-
 class SpeedReader {
   state;
   initialized = false;
@@ -39379,16 +39301,6 @@ class SpeedReader {
     process.stdout.write(makeBorder("\u2534"));
     moveTo(spritzRow + 4, 1);
     process.stdout.write(tickLine);
-    if (currentWordObj && text) {
-      const { lines, sentenceText, highlightLine } = buildSentenceLines(text, currentWordObj, boxWidth, t);
-      this.lastSentenceText = sentenceText;
-      this.lastHighlightLine = highlightLine;
-      const sentStart = spritzRow + 6;
-      for (let i = 0;i < 3; i++) {
-        moveTo(sentStart + i, 1);
-        process.stdout.write(i < lines.length ? centerPad(lines[i], cols) : " ".repeat(cols));
-      }
-    }
     moveTo(rows - 2, 1);
     process.stdout.write(t.dim + centerPad("[space] pause  [\u2192][\u2190] skip  [\u2191][\u2193] sentence  [+][-] wpm  [[]]] chunk  [q] back", cols) + ANSI.reset);
   }
@@ -39404,16 +39316,6 @@ class SpeedReader {
     moveTo(spritzRow + 2, 1);
     process.stdout.write(this._buildWordLine(word, orp, wordStart, t, cols));
     this._writeHeader(this._buildHeaderText(this.getProgress()), spritzRow, cols, t);
-    if (currentWordObj && text) {
-      const { lines, sentenceText, highlightLine } = buildSentenceLines(text, currentWordObj, boxWidth, t);
-      this.lastSentenceText = sentenceText;
-      this.lastHighlightLine = highlightLine;
-      const sentStart = spritzRow + 6;
-      for (let i = 0;i < 3; i++) {
-        moveTo(sentStart + i, 1);
-        process.stdout.write(i < lines.length ? centerPad(lines[i], cols) : " ".repeat(cols));
-      }
-    }
   }
   handleKey(key) {
     switch (key) {
