@@ -421,6 +421,15 @@ function createSelectionFromWordIndex(
   const word = allWords[wordIdx];
   if (!word) return null;
 
+  // Count how many times this word (same text, case-insensitive) appears before wordIdx
+  // This tells us which occurrence we're looking for
+  let occurrenceNumber = 1; // 1-indexed
+  for (let i = 0; i < wordIdx; i++) {
+    if (allWords[i].text.toLowerCase() === word.text.toLowerCase()) {
+      occurrenceNumber++;
+    }
+  }
+
   // Find which page this word appears on (approximate by word distribution)
   let targetPageIdx = 0;
   if (pages.length > 1) {
@@ -437,7 +446,8 @@ function createSelectionFromWordIndex(
     const lines = page?.lines ?? [];
     const groups = getParagraphGroups(lines);
 
-    // Search lines for this word
+    // Search lines for this word, counting occurrences
+    let currentOccurrence = 0;
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const ansiLine = lines[lineIdx];
       const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
@@ -446,20 +456,23 @@ function createSelectionFromWordIndex(
 
       while ((m = re.exec(stripped)) !== null) {
         if (m[0].toLowerCase() === word.text.toLowerCase()) {
-          // Found matching word, create selection
-          let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
-          if (!para) para = { start: lineIdx, end: lineIdx };
+          currentOccurrence++;
+          // If this is the occurrence we're looking for on this page, select it
+          if (currentOccurrence === occurrenceNumber) {
+            let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
+            if (!para) para = { start: lineIdx, end: lineIdx };
 
-          return {
-            pageIndex: pageIdx,
-            paraStart: para.start,
-            paraEnd: para.end,
-            wordText: word.text,
-            wordIndex: wordIdx,
-            wordLine: lineIdx,
-            wordColStart: m.index,
-            wordColEnd: m.index + m[0].length - 1,
-          };
+            return {
+              pageIndex: pageIdx,
+              paraStart: para.start,
+              paraEnd: para.end,
+              wordText: word.text,
+              wordIndex: wordIdx,
+              wordLine: lineIdx,
+              wordColStart: m.index,
+              wordColEnd: m.index + m[0].length - 1,
+            };
+          }
         }
       }
     }
