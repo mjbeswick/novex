@@ -30,8 +30,6 @@ export interface PageViewState {
   isBookmarked: boolean;
   /** Pre-rendered terminal escape sequence for cover image (shown on page 0). */
   coverImageEscape?: string;
-  /** Number of rows the cover image occupies. */
-  coverImageRows?: number;
 }
 
 /** Minimum terminal width to activate two-page spread layout. */
@@ -173,39 +171,39 @@ export class PageView {
 
     const contentRows = rows - 4;
     const lines = pages[currentPage]?.lines ?? [];
-    const { coverImageEscape, coverImageRows: imgRows } = this.state;
-    const showCover = coverImageEscape && imgRows && currentPage === 0;
-    const imageOffset = showCover ? imgRows : 0;
+    const { coverImageEscape } = this.state;
+    const showCover = coverImageEscape && currentPage === 0;
 
     if (showCover) {
-      moveTo(3, 1);
+      // Center the image vertically and horizontally
+      const vPad = Math.floor(contentRows / 2);
+      const hPad = Math.floor(cols / 2);
+      moveTo(3 + vPad, hPad + 1);
       process.stdout.write(coverImageEscape);
-    }
-
-    for (let i = 0; i < contentRows - imageOffset; i++) {
-      moveTo(i + 3 + imageOffset, 1);
-      const inSel = selection && selection.pageIndex === currentPage &&
-        i >= selection.paraStart && i <= selection.paraEnd;
-      let lineStr = lines[i] ?? "";
-      if (inSel &&
-          selection!.wordLine === i &&
-          selection!.wordColStart !== null &&
-          selection!.wordColEnd !== null) {
-        lineStr = highlightWord(lineStr, selection!.wordColStart, selection!.wordColEnd);
+    } else {
+      for (let i = 0; i < contentRows; i++) {
+        moveTo(i + 3, 1);
+        const inSel = selection && selection.pageIndex === currentPage &&
+          i >= selection.paraStart && i <= selection.paraEnd;
+        let lineStr = lines[i] ?? "";
+        if (inSel &&
+            selection!.wordLine === i &&
+            selection!.wordColStart !== null &&
+            selection!.wordColEnd !== null) {
+          lineStr = highlightWord(lineStr, selection!.wordColStart, selection!.wordColEnd);
+        }
+        const selBg = inSel ? t.selectionBg : "";
+        const displayLine = selBg
+          ? lineStr.replace(/\x1b\[0m/g, `\x1b[0m${selBg}`)
+          : lineStr;
+        process.stdout.write(selBg + fitAnsi(t.text + displayLine, cols));
       }
-      const selBg = inSel ? t.selectionBg : "";
-      // Re-apply bg after any reset embedded in book content so the
-      // selection highlight fills the whole line.
-      const displayLine = selBg
-        ? lineStr.replace(/\x1b\[0m/g, `\x1b[0m${selBg}`)
-        : lineStr;
-      process.stdout.write(selBg + fitAnsi(t.text + displayLine, cols));
-    }
-    // Bookmark markers — overlay ◆ at the right edge of bookmarked lines
-    for (const li of this.state.bookmarkedLines) {
-      if (li >= 0 && li < contentRows) {
-        moveTo(li + 3, cols);
-        process.stdout.write(t.accent + "◆" + ANSI.reset);
+      // Bookmark markers — overlay ◆ at the right edge of bookmarked lines
+      for (const li of this.state.bookmarkedLines) {
+        if (li >= 0 && li < contentRows) {
+          moveTo(li + 3, cols);
+          process.stdout.write(t.accent + "◆" + ANSI.reset);
+        }
       }
     }
 
@@ -277,29 +275,51 @@ export class PageView {
 
     // ── Content rows ──────────────────────────────────────────────────────────
     const contentRows = rows - 4;
-    const { coverImageEscape, coverImageRows: imgRows } = this.state;
-    const showCover = coverImageEscape && imgRows && leftIdx === 0;
-    const imageOffset = showCover ? imgRows : 0;
+    const { coverImageEscape } = this.state;
+    const showCover = coverImageEscape && leftIdx === 0;
 
     if (showCover) {
-      moveTo(3, 1);
+      // Cover fills the left page, centered
+      const vPad = Math.floor(contentRows / 2);
+      const hPad = Math.floor(colWidth / 2);
+      moveTo(3 + vPad, hPad + 1);
       process.stdout.write(coverImageEscape);
-    }
 
-    for (let i = 0; i < contentRows; i++) {
-      moveTo(i + 3, 1);
-
-      // Left side: skip text in image area, offset line index after it
-      if (showCover && i < imageOffset) {
-        // Image occupies these rows on the left — only render gutter + right
+      // Render gutter + right page normally
+      for (let i = 0; i < contentRows; i++) {
         moveTo(i + 3, colWidth + 1);
-      } else {
-        const leftLineIdx = i - imageOffset;
+        process.stdout.write(t.border + " │ " + ANSI.reset);
+
+        const inRightSel = selection && selection.pageIndex === rightIdx &&
+          i >= selection.paraStart && i <= selection.paraEnd;
+        let rightLine = rightLines[i] ?? "";
+        if (inRightSel &&
+            selection!.wordLine === i &&
+            selection!.wordColStart !== null &&
+            selection!.wordColEnd !== null) {
+          rightLine = highlightWord(rightLine, selection!.wordColStart, selection!.wordColEnd);
+        }
+        const rightBg = inRightSel ? t.selectionBg : "";
+        const displayRight = rightBg ? rightLine.replace(/\x1b\[0m/g, `\x1b[0m${rightBg}`) : rightLine;
+        process.stdout.write(fitAnsi(rightBg + t.text + displayRight, colWidth));
+      }
+      // Bookmark markers (right page only when cover is shown)
+      for (const li of this.state.bookmarkedLinesRight) {
+        if (li >= 0 && li < contentRows) {
+          moveTo(li + 3, cols);
+          process.stdout.write(t.accent + "◆" + ANSI.reset);
+        }
+      }
+    } else {
+      for (let i = 0; i < contentRows; i++) {
+        moveTo(i + 3, 1);
+
+        // Left side with selection highlight
         const inLeftSel = selection && selection.pageIndex === leftIdx &&
-          leftLineIdx >= selection.paraStart && leftLineIdx <= selection.paraEnd;
-        let leftLine = leftLines[leftLineIdx] ?? "";
+          i >= selection.paraStart && i <= selection.paraEnd;
+        let leftLine = leftLines[i] ?? "";
         if (inLeftSel &&
-            selection!.wordLine === leftLineIdx &&
+            selection!.wordLine === i &&
             selection!.wordColStart !== null &&
             selection!.wordColEnd !== null) {
           leftLine = highlightWord(leftLine, selection!.wordColStart, selection!.wordColEnd);
@@ -308,37 +328,37 @@ export class PageView {
         const leftBg = inLeftSel ? t.selectionBg : "";
         const displayLeft = leftBg ? leftLine.replace(/\x1b\[0m/g, `\x1b[0m${leftBg}`) : leftLine;
         process.stdout.write(fitAnsi(leftBg + t.text + displayLeft, colWidth));
-      }
 
-      // Gutter
-      process.stdout.write(t.border + " │ " + ANSI.reset);
+        // Gutter
+        process.stdout.write(t.border + " │ " + ANSI.reset);
 
-      // Right side — always at normal position
-      const inRightSel = selection && selection.pageIndex === rightIdx &&
-        i >= selection.paraStart && i <= selection.paraEnd;
-      let rightLine = rightLines[i] ?? "";
-      if (inRightSel &&
-          selection!.wordLine === i &&
-          selection!.wordColStart !== null &&
-          selection!.wordColEnd !== null) {
-        rightLine = highlightWord(rightLine, selection!.wordColStart, selection!.wordColEnd);
-      }
+        // Right side with selection highlight
+        const inRightSel = selection && selection.pageIndex === rightIdx &&
+          i >= selection.paraStart && i <= selection.paraEnd;
+        let rightLine = rightLines[i] ?? "";
+        if (inRightSel &&
+            selection!.wordLine === i &&
+            selection!.wordColStart !== null &&
+            selection!.wordColEnd !== null) {
+          rightLine = highlightWord(rightLine, selection!.wordColStart, selection!.wordColEnd);
+        }
 
-      const rightBg = inRightSel ? t.selectionBg : "";
-      const displayRight = rightBg ? rightLine.replace(/\x1b\[0m/g, `\x1b[0m${rightBg}`) : rightLine;
-      process.stdout.write(fitAnsi(rightBg + t.text + displayRight, colWidth));
-    }
-    // Bookmark markers
-    for (const li of this.state.bookmarkedLines) {
-      if (li >= 0 && li < contentRows) {
-        moveTo(li + 3, colWidth);
-        process.stdout.write(t.accent + "◆" + ANSI.reset);
+        const rightBg = inRightSel ? t.selectionBg : "";
+        const displayRight = rightBg ? rightLine.replace(/\x1b\[0m/g, `\x1b[0m${rightBg}`) : rightLine;
+        process.stdout.write(fitAnsi(rightBg + t.text + displayRight, colWidth));
       }
-    }
-    for (const li of this.state.bookmarkedLinesRight) {
-      if (li >= 0 && li < contentRows) {
-        moveTo(li + 3, cols);
-        process.stdout.write(t.accent + "◆" + ANSI.reset);
+      // Bookmark markers
+      for (const li of this.state.bookmarkedLines) {
+        if (li >= 0 && li < contentRows) {
+          moveTo(li + 3, colWidth);
+          process.stdout.write(t.accent + "◆" + ANSI.reset);
+        }
+      }
+      for (const li of this.state.bookmarkedLinesRight) {
+        if (li >= 0 && li < contentRows) {
+          moveTo(li + 3, cols);
+          process.stdout.write(t.accent + "◆" + ANSI.reset);
+        }
       }
     }
 

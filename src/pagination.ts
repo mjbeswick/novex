@@ -56,17 +56,15 @@ function contentStyle(theme: Theme): ContentStyle {
 /**
  * Splits an array of wrapped lines into pages that fit within pageHeight.
  */
-export function paginateText(lines: string[], pageHeight: number, firstPageHeight?: number): string[][] {
+export function paginateText(lines: string[], pageHeight: number): string[][] {
   if (pageHeight <= 0) return [lines];
 
   const pages: string[][] = [];
   let current: string[] = [];
-  const firstLimit = firstPageHeight ?? pageHeight;
 
   for (const line of lines) {
     current.push(line);
-    const limit = pages.length === 0 ? firstLimit : pageHeight;
-    if (current.length >= limit) {
+    if (current.length >= pageHeight) {
       pages.push(current);
       current = [];
     }
@@ -411,8 +409,7 @@ export function buildPages(
   cols: number,
   rows: number,
   lineWidth?: number,
-  theme: Theme = "dark",
-  coverImageRows: number = 0
+  theme: Theme = "dark"
 ): Page[] {
   const effectiveWidth = Math.min(lineWidth ?? 80, cols);
   // Reserve rows for header + separator + status + hints
@@ -423,11 +420,7 @@ export function buildPages(
 
   for (const chapter of content.chapters) {
     const lines = wrapHtml(chapter.html, effectiveWidth, theme);
-    // If this is the first chapter and we have a cover image, shorten the first page
-    const firstPageHeight = (globalPageIndex === 0 && coverImageRows > 0)
-      ? Math.max(1, pageHeight - coverImageRows)
-      : undefined;
-    const chapterPages = paginateText(lines, pageHeight, firstPageHeight);
+    const chapterPages = paginateText(lines, pageHeight);
 
     for (let pageIndexInChapter = 0; pageIndexInChapter < chapterPages.length; pageIndexInChapter++) {
       pages.push({

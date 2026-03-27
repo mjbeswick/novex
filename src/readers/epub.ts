@@ -141,8 +141,6 @@ export async function convertEpub(
   const fullText = htmlToPlainText(fullHtml);
 
   // Extract cover image if available
-  const coverImage = await extractCoverImage(zip, opfRoot, manifest, opfDir);
-
   return {
     html: fullHtml,
     text: fullText,
@@ -150,7 +148,6 @@ export async function convertEpub(
     source,
     hash,
     chapters,
-    coverImage,
   };
 }
 

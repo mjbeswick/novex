@@ -16,8 +16,6 @@ import {
   enableMouseTracking,
   disableMouseTracking,
 } from "./ui/index.ts";
-import { prepareInlineImage } from "./ui/sixel.ts";
-import type { PreparedImage } from "./ui/sixel.ts";
 import {
   PageView,
   ScrollView,
@@ -221,18 +219,8 @@ export async function runSession(
 ): Promise<void> {
   let { cols, rows } = getTerminalSize();
 
-  // Prepare cover image for inline display
-  const pageHeight = Math.max(1, rows - 4);
-  const coverImageRows = Math.min(15, Math.floor(pageHeight * 0.4));
-  const isSpread = cols >= SPREAD_MIN_COLS;
-  const maxImageWidth = isSpread ? Math.floor((cols - 3) / 2) : cols;
-  let preparedCover: PreparedImage | null = null;
-  if (content.coverImage) {
-    preparedCover = await prepareInlineImage(content.coverImage, coverImageRows, maxImageWidth);
-  }
-
   // Build pages
-  let pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme, preparedCover?.rows ?? 0);
+  let pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
 
   // Build words for speed/rsvp
   const words = extractWords(content.text);
@@ -276,7 +264,7 @@ export async function runSession(
       if (resizePending) {
         resizePending = false;
         ({ cols, rows } = getTerminalSize());
-        pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme, preparedCover?.rows ?? 0);
+        pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
         allLines = pages.flatMap((p) => p.lines);
       }
 
@@ -289,8 +277,7 @@ export async function runSession(
             words,
             chunks,
             (idx) => { currentWord = idx; },
-            () => resizePending,
-            preparedCover
+            () => resizePending
           );
           break;
 
@@ -404,8 +391,7 @@ async function runPageMode(
   allWords: ReturnType<typeof extractWords>,
   _chunks: ReturnType<typeof chunkWords>,
   setCurrentWord: (idx: number) => void,
-  isResizePending: () => boolean,
-  preparedCover: PreparedImage | null = null
+  isResizePending: () => boolean
 ): Promise<number> {
   let currentPage = startPage;
   let selection: SelectionState | null = null;
@@ -479,7 +465,6 @@ async function runPageMode(
     title: content.title,
     selection: null,
     isBookmarked: checkIsBookmarked(null),
-    ...(preparedCover ? { coverImageEscape: preparedCover.escape, coverImageRows: preparedCover.rows } : {}),
     ...bookmarkLineState(),
   });
 

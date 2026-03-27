@@ -27,8 +27,8 @@ export interface ParsedContent {
   source: string;
   /** SHA-256 hash of source content for state keying */
   hash: string;
-  /** Cover image as base64-encoded data URL, if available */
-  coverImage?: string;
+  /** Map of image IDs to file paths for images in the book */
+  images?: Map<string, string>;
 }
 
 export interface Chapter {
