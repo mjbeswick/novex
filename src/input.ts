@@ -1,6 +1,9 @@
 import { resolve, dirname, basename, join, relative } from "node:path";
 import { statSync } from "node:fs";
 import { createHash } from "node:crypto";
+import type { Theme } from "./types.ts";
+import { ANSI, getTerminalSize, moveTo } from "./ui/terminal.ts";
+import { themes } from "./ui/themes.ts";
 
 /** Reading extensions that the interactive browser will list */
 const READING_EXTENSIONS = [".epub", ".docx", ".fb2", ".md", ".markdown", ".txt", ".html", ".htm"];
@@ -133,7 +136,7 @@ export async function selectFileInteractive(): Promise<string | null> {
  * Recursively scans a directory for readable book files and returns an interactive selector.
  * Returns the selected file path, or null if cancelled.
  */
-export async function browseDirectory(searchDir: string = process.cwd()): Promise<string | null> {
+export async function browseDirectory(searchDir: string = process.cwd(), theme: Theme = "dark"): Promise<string | null> {
   // Check if directory exists and is accessible
   try {
     // Expand ~ if needed, then resolve to absolute path
@@ -153,7 +156,7 @@ export async function browseDirectory(searchDir: string = process.cwd()): Promis
     }
 
     // Use the resolved directory for the rest of the function
-    return await browseDirContent(resolvedDir);
+    return await browseDirContent(resolvedDir, theme);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`\nError accessing directory: ${msg}\n`);
@@ -208,11 +211,29 @@ async function deepSearch(rootDir: string, query: string): Promise<string[]> {
 
 type BrowseEntry = { type: "parent" } | { type: "dir"; name: string } | { type: "file"; name: string; relPath?: string };
 
+function hotkeyLabel(t: (typeof themes)[Theme], hotkey: string, label: string): string {
+  const index = label.toLowerCase().indexOf(hotkey.toLowerCase());
+  if (index === -1) return t.dim + label + ANSI.reset;
+  return (
+    t.dim +
+    label.slice(0, index) +
+    ANSI.reset +
+    t.accent +
+    ANSI.bold +
+    label[index] +
+    ANSI.reset +
+    t.dim +
+    label.slice(index + 1) +
+    ANSI.reset
+  );
+}
+
 /**
  * Interactive file manager for browsing directories.
  * Navigate with arrow keys, enter directories, / to search recursively.
  */
-async function browseDirContent(rootDir: string): Promise<string | null> {
+async function browseDirContent(rootDir: string, theme: Theme = "dark"): Promise<string | null> {
+  const t = themes[theme];
   let currentDir = rootDir;
   let entries: BrowseEntry[] = [];
   let selectedIndex = 0;
@@ -223,12 +244,10 @@ async function browseDirContent(rootDir: string): Promise<string | null> {
   const buildEntries = async () => {
     entries = [];
     if (searchResults !== null) {
-      // Show search results
       for (const relPath of searchResults) {
         entries.push({ type: "file", name: relPath, relPath });
       }
     } else {
-      // Show directory listing
       if (currentDir !== rootDir) {
         entries.push({ type: "parent" });
       }
@@ -250,58 +269,88 @@ async function browseDirContent(rootDir: string): Promise<string | null> {
   const BACKSPACE = "\x7f";
   const BACKSPACE2 = "\b";
 
-  const termHeight = () => process.stdout.rows || 24;
-
   const renderMenu = () => {
+    const { rows, cols } = getTerminalSize();
     process.stdout.write("\x1b[2J\x1b[H");
 
+    // Header
     if (searchMode) {
-      process.stdout.write(`\x1b[1mSearch:\x1b[0m ${searchQuery}\x1b[K\n\n`);
+      process.stdout.write(t.accent + ANSI.bold + "Search: " + ANSI.reset + t.text + searchQuery + ANSI.reset + "\x1b[K\n\n");
     } else if (searchResults !== null) {
-      process.stdout.write(`\x1b[1mResults for "${searchQuery}"\x1b[0m  (Esc to clear)\n\n`);
+      process.stdout.write(t.accent + ANSI.bold + `Results for "${searchQuery}"` + ANSI.reset + "\n\n");
     } else {
       const displayDir = currentDir === rootDir ? basename(currentDir) : relative(rootDir, currentDir);
-      process.stdout.write(`\x1b[1m${displayDir || basename(currentDir)}/\x1b[0m  (/ search, q quit)\n\n`);
+      process.stdout.write(t.accent + ANSI.bold + (displayDir || basename(currentDir)) + "/" + ANSI.reset + "\n\n");
     }
 
     if (entries.length === 0) {
       if (searchResults !== null) {
-        process.stdout.write("  \x1b[2mNo matches found\x1b[0m\n");
+        process.stdout.write("  " + t.dim + "No matches found" + ANSI.reset + "\n");
       } else {
-        process.stdout.write("  \x1b[2mEmpty directory\x1b[0m\n");
+        process.stdout.write("  " + t.dim + "Empty directory" + ANSI.reset + "\n");
       }
-      return;
+    } else {
+      // Scroll window — reserve 4 lines for header (2) + footer separator + hotkey bar
+      const maxVisible = rows - 4;
+      let start = 0;
+      if (entries.length > maxVisible) {
+        start = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
+        if (start + maxVisible > entries.length) start = entries.length - maxVisible;
+      }
+      const end = Math.min(entries.length, start + maxVisible);
+
+      for (let i = start; i < end; i++) {
+        const entry = entries[i];
+        let label: string;
+        if (entry.type === "parent") {
+          label = t.dim + "../" + ANSI.reset;
+        } else if (entry.type === "dir") {
+          label = t.accent + entry.name + "/" + ANSI.reset;
+        } else {
+          label = entry.relPath
+            ? t.dim + dirname(entry.relPath) + "/" + ANSI.reset + t.text + basename(entry.name) + ANSI.reset
+            : t.text + entry.name + ANSI.reset;
+        }
+
+        if (i === selectedIndex) {
+          process.stdout.write("  " + t.highlight + ANSI.bold + "> " + ANSI.reset + label + "\n");
+        } else {
+          process.stdout.write("    " + label + "\n");
+        }
+      }
     }
 
-    // Scroll window
-    const maxVisible = termHeight() - 4;
-    let start = 0;
-    if (entries.length > maxVisible) {
-      start = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
-      if (start + maxVisible > entries.length) start = entries.length - maxVisible;
-    }
-    const end = Math.min(entries.length, start + maxVisible);
-
-    for (let i = start; i < end; i++) {
-      const entry = entries[i];
-      let label: string;
-      if (entry.type === "parent") {
-        label = "\x1b[2m../\x1b[0m";
-      } else if (entry.type === "dir") {
-        label = `\x1b[34m${entry.name}/\x1b[0m`;
-      } else {
-        label = entry.relPath ? `\x1b[2m${dirname(entry.relPath)}/\x1b[0m${basename(entry.name)}` : entry.name;
-      }
-
-      if (i === selectedIndex) {
-        process.stdout.write(`  \x1b[7m ${label} \x1b[0m\n`);
-      } else {
-        process.stdout.write(`   ${label}\n`);
-      }
-    }
-
-    if (entries.length > maxVisible) {
-      process.stdout.write(`\n  \x1b[2m${selectedIndex + 1}/${entries.length}\x1b[0m`);
+    // Footer: separator line + hotkey bar
+    moveTo(rows - 1, 1);
+    process.stdout.write(t.border + "\u2500".repeat(cols) + ANSI.reset);
+    moveTo(rows, 1);
+    if (searchMode) {
+      process.stdout.write(
+        t.dim + "type to filter  " + ANSI.reset +
+        hotkeyLabel(t, "e", "enter") +
+        t.dim + "  " + ANSI.reset +
+        hotkeyLabel(t, "s", "esc cancel")
+      );
+    } else if (searchResults !== null) {
+      process.stdout.write(
+        t.dim + "\u2191\u2193 select  " + ANSI.reset +
+        hotkeyLabel(t, "o", "open") +
+        t.dim + "  " + ANSI.reset +
+        hotkeyLabel(t, "s", "esc back") +
+        t.dim + "  " + ANSI.reset +
+        hotkeyLabel(t, "q", "quit")
+      );
+    } else {
+      process.stdout.write(
+        t.dim + "\u2191\u2193 select  " + ANSI.reset +
+        hotkeyLabel(t, "o", "open") +
+        t.dim + "  " + ANSI.reset +
+        hotkeyLabel(t, "/", "/ search") +
+        t.dim + "  " + ANSI.reset +
+        hotkeyLabel(t, "s", "esc back") +
+        t.dim + "  " + ANSI.reset +
+        hotkeyLabel(t, "q", "quit")
+      );
     }
   };
 

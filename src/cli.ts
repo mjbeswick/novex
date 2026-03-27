@@ -111,7 +111,7 @@ program
           disableRawMode();
 
           try {
-            const newBookPath = await browseDirectory();
+            const newBookPath = await browseDirectory(process.cwd(), theme);
 
             enableRawMode();
             hideCursor();
@@ -216,6 +216,7 @@ program
   .action(async (files: string[], opts: Record<string, string | boolean | undefined>) => {
     // Only run if no subcommand was invoked
     try {
+      const theme: Theme = (opts["theme"] as Theme) ?? "dark";
       let buffer: Uint8Array | undefined;
       let source: string | undefined;
       let selectedHash: string | null = null;
@@ -363,7 +364,7 @@ program
         enterAltScreen();
 
         try {
-          const newBookPath = await browseDirectory(searchDir);
+          const newBookPath = await browseDirectory(searchDir, theme);
           exitAltScreen();
           showCursor();
           disableRawMode();
@@ -385,7 +386,6 @@ program
       } else {
         // No arguments - try to show books list if there are any books
         const books = await listBooks();
-        const theme: Theme = (opts["theme"] as Theme) ?? "dark";
 
         if (books.length > 0) {
           enableRawMode();
@@ -400,7 +400,7 @@ program
               showCursor();
               disableRawMode();
 
-              const newBookPath = await browseDirectory(searchDir);
+              const newBookPath = await browseDirectory(searchDir, theme);
 
               if (newBookPath) {
                 ({ buffer, source } = await readFromFile(newBookPath));
@@ -447,7 +447,7 @@ program
               disableRawMode();
 
               try {
-                const newBookPath = await browseDirectory(searchDir);
+                const newBookPath = await browseDirectory(searchDir, theme);
 
                 if (newBookPath) {
                   ({ buffer, source } = await readFromFile(newBookPath));
