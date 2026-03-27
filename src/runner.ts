@@ -15,6 +15,9 @@ import {
   exitAltScreen,
   enableMouseTracking,
   disableMouseTracking,
+  signalResize,
+  clearResizeSignal,
+  isResizeSignaled,
 } from "./ui/index.ts";
 import {
   PageView,
@@ -113,21 +116,35 @@ function sentenceAt(text: string, charOffset: number): string {
 /**
  * Race a timer (ms) against a keypress. Resolves with 'tick' or the key string.
  */
-async function raceTickKey(ms: number): Promise<{ type: "tick" } | { type: "key"; key: string }> {
+async function raceTickKey(ms: number): Promise<{ type: "tick" } | { type: "resize" } | { type: "key"; key: string }> {
   return new Promise((resolve) => {
     let settled = false;
 
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      clearInterval(resizeCheck);
       process.stdin.removeListener("data", onData);
       resolve({ type: "tick" });
     }, ms);
+
+    // Check for resize signal periodically
+    const resizeCheck = setInterval(() => {
+      if (settled) return;
+      if (isResizeSignaled()) {
+        settled = true;
+        clearTimeout(timer);
+        clearInterval(resizeCheck);
+        process.stdin.removeAllListeners("data");
+        resolve({ type: "resize" });
+      }
+    }, 50);
 
     const onData = (data: Buffer | string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearInterval(resizeCheck);
       process.stdin.removeListener("data", onData);
 
       const raw = typeof data === "string" ? data : data.toString("binary");
@@ -227,10 +244,13 @@ export async function runSession(
   const words = extractWords(content.text);
   const chunks = chunkWords(words, options.chunk);
 
-  // Track terminal resize
+  // Track terminal resize via SIGWINCH signal for more reliable handling
   let resizePending = false;
-  const onResize = () => { resizePending = true; };
-  process.stdout.on("resize", onResize);
+  const onSigwinch = () => {
+    resizePending = true;
+    signalResize(); // Also signal the key reader to interrupt
+  };
+  process.on("SIGWINCH", onSigwinch);
 
   // Parse initial position
   let startPage = 0;
@@ -267,6 +287,7 @@ export async function runSession(
       // Rebuild pages if the terminal was resized
       if (resizePending) {
         resizePending = false;
+        clearResizeSignal();
         ({ cols, rows } = getTerminalSize());
         pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
         allLines = pages.flatMap((p) => p.lines);
@@ -326,7 +347,7 @@ export async function runSession(
       await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title, pages.length).catch(() => {});
     }
   } finally {
-    process.stdout.off("resize", onResize);
+    process.off("SIGWINCH", onSigwinch);
     showCursor();
     disableRawMode();
     exitAltScreen();
@@ -564,6 +585,7 @@ async function runPageMode(
     while (true) {
       if (isResizePending()) return currentPage;
       const key = await readKey();
+      if (key === "_resize") return currentPage;
       const action = view.handleKey(key);
 
       if (action === "next") {
@@ -879,6 +901,7 @@ async function runScrollMode(
   while (true) {
     if (isResizePending()) return offset;
     const key = await readKey();
+    if (key === "_resize") return offset;
     const action = view.handleKey(key);
 
     const { rows: currentRows } = getTerminalSize();
@@ -1014,6 +1037,7 @@ async function runSpeedMode(
     if (paused) {
       // Blocked waiting for keypress
       const key = await readKey();
+      if (key === "_resize") break;
       const action = view.handleKey(key);
       if (!handleSpeedAction(action)) break;
     } else {
@@ -1037,6 +1061,9 @@ async function runSpeedMode(
           view.updateState({ paused });
           view.render();
         }
+      } else if (result.type === "resize") {
+        // Terminal was resized
+        break;
       } else {
         // Key was pressed
         const action = view.handleKey(result.key);

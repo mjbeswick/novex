@@ -93,16 +93,45 @@ export function disableRawMode(): void {
  *             'shift+right' | 'shift+left' | 'shift+up' | 'shift+down'
  *             'enter' | 'space' | 'escape' | 'backspace' | 'q' | …
  */
+// Flag to signal terminal resize during key reading
+let resizeSignaled = false;
+
+export function signalResize(): void {
+  resizeSignaled = true;
+}
+
+export function isResizeSignaled(): boolean {
+  return resizeSignaled;
+}
+
+export function clearResizeSignal(): void {
+  resizeSignaled = false;
+}
+
 export async function readKey(): Promise<string> {
   while (true) {
     const key = await readOnce();
+    if (key === "_resize") {
+      clearResizeSignal();
+      return "_resize";
+    }
     if (key !== "_ignore") return key;
   }
 }
 
 async function readOnce(): Promise<string> {
   return new Promise((resolve, _reject) => {
+    // Set up a timeout to periodically check for resize signal
+    const checkResize = setInterval(() => {
+      if (resizeSignaled) {
+        clearInterval(checkResize);
+        process.stdin.removeAllListeners("data");
+        resolve("_resize");
+      }
+    }, 50);
+
     const onData = (data: Buffer | string) => {
+      clearInterval(checkResize);
       process.stdin.removeListener("data", onData);
       const raw = typeof data === "string" ? data : data.toString("binary");
       if (raw === "\x03") {

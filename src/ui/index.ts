@@ -2,7 +2,8 @@
 export { ANSI, clearScreen, enterAltScreen, exitAltScreen,
          hideCursor, showCursor, moveTo, clearLine,
          getTerminalSize, enableRawMode, disableRawMode, readKey,
-         enableMouseTracking, disableMouseTracking } from "./terminal";
+         enableMouseTracking, disableMouseTracking,
+         signalResize, isResizeSignaled, clearResizeSignal } from "./terminal";
 
 // Theme definitions
 export { themes } from "./themes";
