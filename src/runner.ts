@@ -437,7 +437,8 @@ function createSelectionFromWordIndex(
     targetPageIdx = Math.max(0, Math.min(targetPageIdx, pages.length - 1));
   }
 
-  // Search nearby pages for the word
+  // Search nearby pages for the word, tracking occurrence count across pages
+  let globalOccurrence = 0;
   for (let offset = 0; offset < pages.length; offset++) {
     const pageIdx = targetPageIdx + (offset % 2 === 0 ? offset / 2 : -Math.ceil(offset / 2));
     if (pageIdx < 0 || pageIdx >= pages.length) continue;
@@ -446,8 +447,7 @@ function createSelectionFromWordIndex(
     const lines = page?.lines ?? [];
     const groups = getParagraphGroups(lines);
 
-    // Search lines for this word, counting occurrences
-    let currentOccurrence = 0;
+    // Search lines for this word, counting occurrences across all pages
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const ansiLine = lines[lineIdx];
       const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
@@ -456,9 +456,9 @@ function createSelectionFromWordIndex(
 
       while ((m = re.exec(stripped)) !== null) {
         if (m[0].toLowerCase() === word.text.toLowerCase()) {
-          currentOccurrence++;
-          // If this is the occurrence we're looking for on this page, select it
-          if (currentOccurrence === occurrenceNumber) {
+          globalOccurrence++;
+          // If this is the occurrence we're looking for, select it
+          if (globalOccurrence === occurrenceNumber) {
             let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
             if (!para) para = { start: lineIdx, end: lineIdx };
 
