@@ -101,91 +101,86 @@ program
       enterAltScreen();
 
       try {
-        let selectedHash: string | null = null;
+        while (true) {
+          let selectedHash: string | null = null;
 
-        selectedHash = await showBooksList(books, theme, async (hash) => {
-          await deleteBook(hash);
-        }, async () => {
-          exitAltScreen();
-          showCursor();
-          disableRawMode();
-
-          try {
-            const newBookPath = await browseDirectory(process.cwd(), theme);
-
-            enableRawMode();
-            hideCursor();
-            enterAltScreen();
-
-            if (newBookPath) {
-              const { buffer, source } = await readFromFile(newBookPath);
-            const format = detectFormat(source, buffer);
-            const content = await convertToContent(source, buffer, format);
-            const options: CLIOptions = {
-              mode: "page",
-              wpm: 250,
-              chunk: 1,
-              theme,
-              lineWidth: undefined,
-              position: undefined,
-              noSave: false,
-              tts: false,
-            };
-
+          selectedHash = await showBooksList(books, theme, async (hash) => {
+            await deleteBook(hash);
+          }, async () => {
             exitAltScreen();
             showCursor();
             disableRawMode();
 
-            await runSession(content, options);
+            try {
+              const newBookPath = await browseDirectory(process.cwd(), theme);
 
-            // Refresh book list after reading
-            const updatedBooks = await listBooks();
-            if (updatedBooks.length > books.length) {
-              books = updatedBooks;
+              if (newBookPath) {
+                const { buffer, source } = await readFromFile(newBookPath);
+                const format = detectFormat(source, buffer);
+                const content = await convertToContent(source, buffer, format);
+                const options: CLIOptions = {
+                  mode: "page",
+                  wpm: 250,
+                  chunk: 1,
+                  theme,
+                  lineWidth: undefined,
+                  position: undefined,
+                  noSave: false,
+                  tts: false,
+                };
+
+                await runSession(content, options);
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              process.stderr.write(`\nError during browse: ${msg}\n`);
             }
 
+            // Refresh book list and return to it
+            books = await listBooks();
             enableRawMode();
             hideCursor();
             enterAltScreen();
+          });
+
+          if (selectedHash) {
+            const book = books.find((b) => b.hash === selectedHash);
+            if (book && book.state.source) {
+              const { buffer, source } = await readFromFile(book.state.source);
+              const format = detectFormat(source, buffer);
+              const content = await convertToContent(source, buffer, format);
+
+              const state = await getFileState(content.hash);
+              const initialPosition = state?.lastPosition;
+
+              const options: CLIOptions = {
+                mode: "page",
+                wpm: 250,
+                chunk: 1,
+                theme,
+                lineWidth: undefined,
+                position: initialPosition,
+                noSave: false,
+                tts: false,
+              };
+
+              exitAltScreen();
+              showCursor();
+              disableRawMode();
+
+              await runSession(content, options, initialPosition);
+
+              // Return to book list
+              books = await listBooks();
+              enableRawMode();
+              hideCursor();
+              enterAltScreen();
+              continue;
             }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            process.stderr.write(`\nError during browse: ${msg}\n`);
-            enableRawMode();
-            hideCursor();
-            enterAltScreen();
           }
-        });
 
-        if (selectedHash) {
-          // Find the book file to reload it
-          const book = books.find((b) => b.hash === selectedHash);
-          if (book && book.state.source) {
-            const { buffer, source } = await readFromFile(book.state.source);
-            const format = detectFormat(source, buffer);
-            const content = await convertToContent(source, buffer, format);
-
-            // Get the reading position and options
-            const state = await getFileState(content.hash);
-            const initialPosition = state?.lastPosition;
-
-            const options: CLIOptions = {
-              mode: "page",
-              wpm: 250,
-              chunk: 1,
-              theme,
-              lineWidth: undefined,
-              position: initialPosition,
-              noSave: false,
-              tts: false,
-            };
-
-            exitAltScreen();
-            showCursor();
-            disableRawMode();
-
-            await runSession(content, options, initialPosition);
-          }
+          // User quit the book list
+          break;
         }
       } finally {
         exitAltScreen();
@@ -358,41 +353,73 @@ program
       } else if (isStdinPiped()) {
         ({ buffer, source } = await readFromStdin());
       } else if (isDirectory) {
-        // Directory passed - show browse dialog
+        // Directory passed - browse loop: browse → read → back to browse
+        while (true) {
+          const newBookPath = await browseDirectory(searchDir, theme);
+
+          if (!newBookPath) {
+            process.exit(0);
+          }
+
+          const { buffer: buf, source: src } = await readFromFile(newBookPath);
+          const format = detectFormat(src, buf);
+          const content = await convertToContent(src, buf, format);
+
+          const readOpts: CLIOptions = {
+            mode: (opts["mode"] as ReadingMode) ?? "page",
+            wpm: parseInt((opts["wpm"] as string) ?? "250", 10),
+            chunk: parseInt((opts["chunk"] as string) ?? "1", 10),
+            theme,
+            lineWidth: opts["lineWidth"] ? parseInt(opts["lineWidth"] as string, 10) : undefined,
+            position: opts["position"] as string | undefined,
+            noSave: opts["save"] === false,
+            tts: opts["tts"] === true,
+          };
+
+          let initialPos: string | undefined = readOpts.position;
+          if (!initialPos && !readOpts.noSave) {
+            const state = await getFileState(content.hash);
+            if (state?.lastPosition) initialPos = state.lastPosition;
+          }
+
+          await runSession(content, readOpts, initialPos);
+        }
+      } else {
+        // No arguments - show book list loop
+        let books = await listBooks();
+
+        // Helper to open a book file and run the reading session
+        const openAndRead = async (filePath: string, position?: string) => {
+          const { buffer: buf, source: src } = await readFromFile(filePath);
+          const format = detectFormat(src, buf);
+          const content = await convertToContent(src, buf, format);
+
+          const readOpts: CLIOptions = {
+            mode: (opts["mode"] as ReadingMode) ?? "page",
+            wpm: parseInt((opts["wpm"] as string) ?? "250", 10),
+            chunk: parseInt((opts["chunk"] as string) ?? "1", 10),
+            theme,
+            lineWidth: opts["lineWidth"] ? parseInt(opts["lineWidth"] as string, 10) : undefined,
+            position: position ?? (opts["position"] as string | undefined),
+            noSave: opts["save"] === false,
+            tts: opts["tts"] === true,
+          };
+
+          let initialPos: string | undefined = readOpts.position;
+          if (!initialPos && !readOpts.noSave) {
+            const state = await getFileState(content.hash);
+            if (state?.lastPosition) initialPos = state.lastPosition;
+          }
+
+          await runSession(content, readOpts, initialPos);
+        };
+
         enableRawMode();
         hideCursor();
         enterAltScreen();
 
         try {
-          const newBookPath = await browseDirectory(searchDir, theme);
-          exitAltScreen();
-          showCursor();
-          disableRawMode();
-
-          if (newBookPath) {
-            ({ buffer, source } = await readFromFile(newBookPath));
-          } else {
-            program.help({ error: false });
-            process.exit(0);
-          }
-        } catch (err) {
-          exitAltScreen();
-          showCursor();
-          disableRawMode();
-          const msg = err instanceof Error ? err.message : String(err);
-          process.stderr.write(`\nError: ${msg}\n`);
-          process.exit(1);
-        }
-      } else {
-        // No arguments - try to show books list if there are any books
-        const books = await listBooks();
-
-        if (books.length > 0) {
-          enableRawMode();
-          hideCursor();
-          enterAltScreen();
-
-          try {
+          while (true) {
             selectedHash = await showBooksList(books, theme, async (hash) => {
               await deleteBook(hash);
             }, async () => {
@@ -400,86 +427,53 @@ program
               showCursor();
               disableRawMode();
 
-              const newBookPath = await browseDirectory(searchDir, theme);
-
-              if (newBookPath) {
-                ({ buffer, source } = await readFromFile(newBookPath));
-              }
-
-              enableRawMode();
-              hideCursor();
-              enterAltScreen();
-            });
-          } finally {
-            exitAltScreen();
-            showCursor();
-            disableRawMode();
-          }
-
-          if (selectedHash && !buffer) {
-            // Find and open the selected book
-            const book = books.find((b) => b.hash === selectedHash);
-            if (book && book.state.source) {
-              ({ buffer, source } = await readFromFile(book.state.source));
-            } else {
-              program.help({ error: false });
-              process.exit(0);
-            }
-          } else if (!buffer) {
-            // User dismissed the list and didn't browse, show file selector
-            const selected = await selectFileInteractive();
-            if (selected === null) {
-              program.help({ error: false });
-              process.exit(0);
-            }
-            ({ buffer, source } = await readFromFile(selected));
-          }
-        } else {
-          // No books in history, show browse or file selector
-          enableRawMode();
-          hideCursor();
-          enterAltScreen();
-
-          try {
-            await showBooksList([], theme, async () => {}, async () => {
-              exitAltScreen();
-              showCursor();
-              disableRawMode();
-
               try {
                 const newBookPath = await browseDirectory(searchDir, theme);
-
                 if (newBookPath) {
-                  ({ buffer, source } = await readFromFile(newBookPath));
+                  await openAndRead(newBookPath);
                 }
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 process.stderr.write(`\nError during browse: ${msg}\n`);
               }
 
+              books = await listBooks();
               enableRawMode();
               hideCursor();
               enterAltScreen();
             });
-          } finally {
-            exitAltScreen();
-            showCursor();
-            disableRawMode();
-          }
 
-          if (!buffer) {
-            // User didn't select from browse, fall back to file selector
-            const selected = await selectFileInteractive();
-            if (selected === null) {
-              program.help({ error: false });
-              process.exit(0);
+            if (selectedHash) {
+              const book = books.find((b) => b.hash === selectedHash);
+              if (book && book.state.source) {
+                exitAltScreen();
+                showCursor();
+                disableRawMode();
+
+                const state = await getFileState(book.hash);
+                await openAndRead(book.state.source, state?.lastPosition);
+
+                books = await listBooks();
+                enableRawMode();
+                hideCursor();
+                enterAltScreen();
+                continue;
+              }
             }
-            ({ buffer, source } = await readFromFile(selected));
+
+            // User quit the book list
+            break;
           }
+        } finally {
+          exitAltScreen();
+          showCursor();
+          disableRawMode();
         }
+
+        process.exit(0);
       }
 
-      // Ensure buffer and source are defined
+      // Direct file or stdin - read once and exit
       if (!buffer || !source) {
         process.stderr.write("Error: No file selected\n");
         process.exit(1);
