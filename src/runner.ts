@@ -584,9 +584,11 @@ async function runPageMode(
       } else if (action === "bookmarks") {
         const position = await showBookmarks(localBookmarks, options.theme, async (idx) => {
           await deleteBookmark(content.hash, idx).catch(() => {});
-          localBookmarks.splice(idx, 1);
+          // Reload bookmarks from store to ensure indices stay correct after deletion
+          const updatedState = await getFileState(content.hash).catch(() => null);
+          localBookmarks = updatedState?.bookmarks ?? [];
         });
-        // Reload from store to ensure consistency after any deletions
+        // Ensure we have the latest state from store
         const updatedState = await getFileState(content.hash).catch(() => null);
         localBookmarks = updatedState?.bookmarks ?? [];
         if (position) {
