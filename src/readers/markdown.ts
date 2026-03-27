@@ -1,6 +1,6 @@
 import type { ParsedContent, Chapter } from "../types.ts";
 import { marked } from "marked";
-import { htmlToPlainText } from "./utils.ts";
+import { htmlToPlainText, extractImages } from "./utils.ts";
 import path from "path";
 
 /**
@@ -29,6 +29,9 @@ export async function convertMarkdown(
 
   const plainText = htmlToPlainText(fullHtml);
 
+  // Extract images from content
+  const images = extractImages(fullHtml);
+
   return {
     html: fullHtml,
     text: plainText,
@@ -36,6 +39,7 @@ export async function convertMarkdown(
     source,
     hash,
     chapters,
+    images: images.size > 0 ? images : undefined,
   };
 }
 

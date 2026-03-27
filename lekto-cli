@@ -36185,12 +36185,32 @@ function htmlToPlainText(html) {
 `).replace(/<\/pre>/gi, `
 
 `);
+  let imageId = 0;
+  text = text.replace(/<img\b[^>]*>/gi, () => {
+    const placeholder = `[Image ${imageId}]`;
+    imageId++;
+    return placeholder;
+  });
   text = text.replace(/<[^>]+>/g, "");
   text = text.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10))).replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
   text = text.replace(/\n{3,}/g, `
 
 `);
   return text.trim();
+}
+function extractImages(html) {
+  const images = new Map;
+  let imageId = 0;
+  const imgRegex = /<img\b[^>]*\ssrc=["']([^"']+)["'][^>]*>/gi;
+  let match;
+  while ((match = imgRegex.exec(html)) !== null) {
+    const src = match[1];
+    if (src) {
+      images.set(`${imageId}`, src);
+      imageId++;
+    }
+  }
+  return images;
 }
 
 // src/readers/epub.ts
@@ -36281,13 +36301,15 @@ async function convertEpub(buffer, source, hash) {
   const fullHtml = chapters.map((c) => c.html).join(`
 `);
   const fullText = htmlToPlainText(fullHtml);
+  const images = extractImages(fullHtml);
   return {
     html: fullHtml,
     text: fullText,
     title: docTitle,
     source,
     hash,
-    chapters
+    chapters,
+    images: images.size > 0 ? images : undefined
   };
 }
 function extractBody(html) {
@@ -36372,13 +36394,15 @@ async function convertDocx(buffer, source, hash) {
   const chapters = splitAtH1(fullHtml, fileBasename);
   const title = chapters.length > 0 && chapters[0].title !== fileBasename ? chapters[0].title : fileBasename;
   const plainText = htmlToPlainText(fullHtml);
+  const images = extractImages(fullHtml);
   return {
     html: fullHtml,
     text: plainText,
     title,
     source,
     hash,
-    chapters
+    chapters,
+    images: images.size > 0 ? images : undefined
   };
 }
 function splitAtH1(html, fallbackTitle) {
@@ -36464,13 +36488,15 @@ async function convertFb2(buffer, source, hash) {
   const fullHtml = chapters.map((c) => c.html).join(`
 `);
   const fullText = htmlToPlainText(fullHtml);
+  const images = extractImages(fullHtml);
   return {
     html: fullHtml,
     text: fullText,
     title: docTitle,
     source,
     hash,
-    chapters
+    chapters,
+    images: images.size > 0 ? images : undefined
   };
 }
 function convertFb2NodeToHtml(fb2Inner) {
@@ -38479,13 +38505,15 @@ async function convertMarkdown(text, source, hash) {
   const chapters = splitAtH12(fullHtml, fileBasename);
   const title = chapters.length > 0 && chapters[0].title !== fileBasename ? chapters[0].title : fileBasename;
   const plainText = htmlToPlainText(fullHtml);
+  const images = extractImages(fullHtml);
   return {
     html: fullHtml,
     text: plainText,
     title,
     source,
     hash,
-    chapters
+    chapters,
+    images: images.size > 0 ? images : undefined
   };
 }
 function splitAtH12(html, fallbackTitle) {

@@ -1,7 +1,7 @@
 import type { ParsedContent, Chapter } from "../types.ts";
 import JSZip from "jszip";
 import { parse as parseHtml } from "node-html-parser";
-import { htmlToPlainText } from "./utils.ts";
+import { htmlToPlainText, extractImages } from "./utils.ts";
 import path from "path";
 
 /**
@@ -140,7 +140,9 @@ export async function convertEpub(
   const fullHtml = chapters.map((c) => c.html).join("\n");
   const fullText = htmlToPlainText(fullHtml);
 
-  // Extract cover image if available
+  // Extract images from content
+  const images = extractImages(fullHtml);
+
   return {
     html: fullHtml,
     text: fullText,
@@ -148,6 +150,7 @@ export async function convertEpub(
     source,
     hash,
     chapters,
+    images: images.size > 0 ? images : undefined,
   };
 }
 
