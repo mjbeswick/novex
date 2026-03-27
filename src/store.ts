@@ -110,6 +110,9 @@ export async function addBookmark(
     };
   }
 
+  const exists = store[hash].bookmarks.some(b => b.position === bookmark.position);
+  if (exists) return;
+
   store[hash].bookmarks.push(bookmark);
   await saveHistory(store);
 }
