@@ -38,6 +38,33 @@ function calculatePercentage(position: string, totalPages?: number): string {
   return `${percent}%`;
 }
 
+function truncateTitle(title: string, maxWidth: number): string {
+  const visible = visLen(title);
+  if (visible <= maxWidth) return title;
+
+  // Track visible characters while preserving ANSI codes
+  let truncated = "";
+  let visibleCount = 0;
+  let i = 0;
+
+  while (i < title.length && visibleCount < maxWidth - 1) {
+    // Handle ANSI escape sequences
+    if (title[i] === "\x1b" && title[i + 1] === "[") {
+      const end = title.indexOf("m", i);
+      if (end !== -1) {
+        truncated += title.slice(i, end + 1);
+        i = end + 1;
+        continue;
+      }
+    }
+    truncated += title[i];
+    visibleCount++;
+    i++;
+  }
+
+  return truncated + "…";
+}
+
 function center(str: string, width: number): string {
   if (str.length >= width) return str.slice(0, width);
   const pad = Math.floor((width - str.length) / 2);
@@ -121,21 +148,24 @@ export async function showBooksList(
         const isSelected = itemIdx === selected;
 
         const num = `  ${String(itemIdx + 1).padStart(2)}.  `;
+        const numVisible = visLen(num);
         const title = item.state.title || item.state.source;
         const percent = calculatePercentage(item.state.lastPosition, item.state.lastTotalPages);
         const relTime = formatRelativeTime(item.state.lastRead);
         const rightStr = `  ${t.dim}${percent} · ${relTime}${ANSI.reset}  `;
         const rightVisible = 2 + visLen(percent) + 3 + visLen(relTime) + 2;
 
-        const leftText = `${num}${title}`;
-        const leftVisible = visLen(leftText);
+        // Reserve space for number, padding gap, and right info
+        const minGap = 2; // Minimum space between title and right info
+        const maxTitleWidth = Math.max(20, cols - numVisible - rightVisible - minGap);
+        const truncatedTitle = truncateTitle(title, maxTitleWidth);
 
         moveTo(listStart + i, 1);
         if (isSelected) {
-          const line = `${num}${t.accent}${ANSI.bold}${title}${ANSI.reset}`;
+          const line = `${num}${t.accent}${ANSI.bold}${truncatedTitle}${ANSI.reset}`;
           process.stdout.write(t.selectionBg + padToWidth(line, cols - rightVisible) + rightStr + ANSI.reset);
         } else {
-          const line = `${num}${t.text}${title}${ANSI.reset}`;
+          const line = `${num}${t.text}${truncatedTitle}${ANSI.reset}`;
           process.stdout.write(padToWidth(line, cols - rightVisible) + rightStr + ANSI.reset);
         }
       }
