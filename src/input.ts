@@ -338,18 +338,20 @@ async function browseDirContent(rootDir: string, theme: Theme = "dark"): Promise
         t.dim + "  " + ANSI.reset +
         hotkeyLabel(t, "s", "esc back") +
         t.dim + "  " + ANSI.reset +
-        hotkeyLabel(t, "b", "books")
+        hotkeyLabel(t, "c", "close")
       );
     } else {
+      const canGoBack = currentDir !== rootDir;
       process.stdout.write(
         t.dim + "\u2191\u2193 select  " + ANSI.reset +
         hotkeyLabel(t, "o", "open") +
         t.dim + "  " + ANSI.reset +
         hotkeyLabel(t, "/", "/ search") +
         t.dim + "  " + ANSI.reset +
-        hotkeyLabel(t, "s", "esc back") +
-        t.dim + "  " + ANSI.reset +
-        hotkeyLabel(t, "b", "books")
+        (canGoBack
+          ? hotkeyLabel(t, "s", "esc back") + t.dim + "  " + ANSI.reset
+          : "") +
+        hotkeyLabel(t, "c", "close")
       );
     }
   };
@@ -434,8 +436,12 @@ async function browseDirContent(rootDir: string, theme: Theme = "dark"): Promise
           currentDir = dirname(currentDir);
           await buildEntries();
           renderMenu();
+        } else {
+          cleanup();
+          process.stdout.write("\x1b[2J\x1b[H");
+          resolvePromise(null);
         }
-      } else if (key === "b" || key === CTRL_C) {
+      } else if (key === "c" || key === "q" || key === CTRL_C) {
         cleanup();
         process.stdout.write("\x1b[2J\x1b[H");
         resolvePromise(null);
