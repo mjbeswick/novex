@@ -465,6 +465,7 @@ async function runPageMode(
     title: content.title,
     selection: null,
     isBookmarked: checkIsBookmarked(null),
+    images: content.images,
     ...bookmarkLineState(),
   });
 
@@ -608,6 +609,28 @@ async function runPageMode(
         }
         view.updateState({ bookmarkCount: localBookmarks.length, isBookmarked: checkIsBookmarked(selection), ...bookmarkLineState() });
         view.render();
+      } else if (action === "image") {
+        // Find image on current page and open it
+        if (content.images && content.images.size > 0) {
+          const pageLines = pages[currentPage]?.lines ?? [];
+          // Find first image on current page
+          const imageRegex = /\[Image (\d+)\]/;
+          let foundImageId: string | null = null;
+          for (const line of pageLines) {
+            const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+            const match = stripped.match(imageRegex);
+            if (match) {
+              foundImageId = match[1];
+              break;
+            }
+          }
+          if (foundImageId && content.images.has(foundImageId)) {
+            const imagePath = content.images.get(foundImageId)!;
+            const { openImage } = await import("./ui/image-viewer.ts");
+            await openImage(imagePath).catch(() => {});
+            view.render();
+          }
+        }
       } else if (typeof action === "object" && action !== null && action.type === "click") {
         const { cols, rows } = getTerminalSize();
         const contentRows = rows - 4;

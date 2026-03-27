@@ -30,6 +30,8 @@ export interface PageViewState {
   isBookmarked: boolean;
   /** Pre-rendered terminal escape sequence for cover image (shown on page 0). */
   coverImageEscape?: string;
+  /** Map of image IDs to image paths. */
+  images?: Map<string, string>;
 }
 
 /** Minimum terminal width to activate two-page spread layout. */
@@ -46,6 +48,16 @@ function padEnd(str: string, width: number): string {
 /** Strip ANSI sequences for visible-length calculations. */
 function visLen(s: string): number {
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+/** Detect if a line contains image placeholders. */
+function hasImage(line: string): boolean {
+  return /\[Image \d+\]/.test(line);
+}
+
+/** Style image placeholders in a line. */
+function styleImages(line: string, t: ColorTheme): string {
+  return line.replace(/\[Image (\d+)\]/g, `${t.accent}${ANSI.bold}[Image $1]${ANSI.reset}${t.text}`);
 }
 
 /**
@@ -186,6 +198,10 @@ export class PageView {
         const inSel = selection && selection.pageIndex === currentPage &&
           i >= selection.paraStart && i <= selection.paraEnd;
         let lineStr = lines[i] ?? "";
+        // Style image placeholders
+        if (hasImage(lineStr)) {
+          lineStr = styleImages(lineStr, t);
+        }
         if (inSel &&
             selection!.wordLine === i &&
             selection!.wordColStart !== null &&
@@ -209,9 +225,13 @@ export class PageView {
 
     // Footer separator + hints
     const bmLabel = this.state.isBookmarked ? "[b]ookmarked ◆" : "[b]ookmark";
+    const currentPageLines = pages[currentPage]?.lines ?? [];
+    const hasImages = this.state.images && this.state.images.size > 0 &&
+      currentPageLines.some(line => hasImage(line));
+    const imageHint = hasImages ? " [i]mage" : "";
     let hintsText: string;
     if (!selection) {
-      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search [q]uit [?]help`;
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
@@ -404,6 +424,7 @@ export class PageView {
     | "escape"
     | "tts"
     | "bookmarks"
+    | "image"
     | { type: "click"; row: number; col: number }
     | null {
     if (key.startsWith("mouse:")) {
@@ -441,6 +462,8 @@ export class PageView {
         return "tts";
       case "B":
         return "bookmarks";
+      case "i":
+        return "image";
       default:
         return null;
     }

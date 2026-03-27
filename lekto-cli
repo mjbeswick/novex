@@ -35770,6 +35770,33 @@ var require_lib13 = __commonJS((exports) => {
   };
 });
 
+// src/ui/image-viewer.ts
+var exports_image_viewer = {};
+__export(exports_image_viewer, {
+  openImage: () => openImage
+});
+async function openImage(imagePath) {
+  const viewer = Bun.env.LEKTO_IMAGE_VIEWER;
+  try {
+    if (viewer) {
+      await Bun.spawn([viewer, imagePath]).exited;
+    } else {
+      if (process.platform === "darwin") {
+        await Bun.spawn(["open", imagePath]).exited;
+      } else if (process.platform === "linux") {
+        await Bun.spawn(["xdg-open", imagePath]).exited;
+      } else if (process.platform === "win32") {
+        await Bun.spawn(["start", imagePath]).exited;
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`
+Error opening image: ${msg}
+`);
+  }
+}
+
 // node_modules/commander/esm.mjs
 var import__ = __toESM(require_commander(), 1);
 var {
@@ -38767,6 +38794,12 @@ var SPREAD_MIN_COLS = 120;
 function visLen(s) {
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
+function hasImage(line) {
+  return /\[Image \d+\]/.test(line);
+}
+function styleImages(line, t) {
+  return line.replace(/\[Image (\d+)\]/g, `${t.accent}${ANSI.bold}[Image $1]${ANSI.reset}${t.text}`);
+}
 function fitAnsi(str, width) {
   let visible = 0;
   let result = "";
@@ -38875,6 +38908,9 @@ class PageView {
         moveTo(i + 3, 1);
         const inSel = selection && selection.pageIndex === currentPage && i >= selection.paraStart && i <= selection.paraEnd;
         let lineStr = lines[i] ?? "";
+        if (hasImage(lineStr)) {
+          lineStr = styleImages(lineStr, t);
+        }
         if (inSel && selection.wordLine === i && selection.wordColStart !== null && selection.wordColEnd !== null) {
           lineStr = highlightWord(lineStr, selection.wordColStart, selection.wordColEnd);
         }
@@ -38890,9 +38926,12 @@ class PageView {
       }
     }
     const bmLabel = this.state.isBookmarked ? "[b]ookmarked \u25C6" : "[b]ookmark";
+    const currentPageLines = pages[currentPage]?.lines ?? [];
+    const hasImages = this.state.images && this.state.images.size > 0 && currentPageLines.some((line) => hasImage(line));
+    const imageHint = hasImages ? " [i]mage" : "";
     let hintsText;
     if (!selection) {
-      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search [q]uit [?]help`;
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       hintsText = `"${selection.wordText}" \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
@@ -39044,6 +39083,8 @@ class PageView {
         return "tts";
       case "B":
         return "bookmarks";
+      case "i":
+        return "image";
       default:
         return null;
     }
@@ -40471,6 +40512,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
     title: content.title,
     selection: null,
     isBookmarked: checkIsBookmarked(null),
+    images: content.images,
     ...bookmarkLineState()
   });
   enableMouseTracking();
@@ -40608,6 +40650,26 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
         }
         view.updateState({ bookmarkCount: localBookmarks.length, isBookmarked: checkIsBookmarked(selection), ...bookmarkLineState() });
         view.render();
+      } else if (action === "image") {
+        if (content.images && content.images.size > 0) {
+          const pageLines = pages[currentPage]?.lines ?? [];
+          const imageRegex = /\[Image (\d+)\]/;
+          let foundImageId = null;
+          for (const line of pageLines) {
+            const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+            const match = stripped.match(imageRegex);
+            if (match) {
+              foundImageId = match[1];
+              break;
+            }
+          }
+          if (foundImageId && content.images.has(foundImageId)) {
+            const imagePath = content.images.get(foundImageId);
+            const { openImage: openImage2 } = await Promise.resolve().then(() => exports_image_viewer);
+            await openImage2(imagePath).catch(() => {});
+            view.render();
+          }
+        }
       } else if (typeof action === "object" && action !== null && action.type === "click") {
         const { cols, rows } = getTerminalSize();
         const contentRows = rows - 4;
