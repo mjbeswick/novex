@@ -1,4 +1,4 @@
-# lekto-cli
+# Novex
 
 A powerful terminal-based reader for modern document formats. Read EPUB, DOCX, FB2, Markdown, and plain text files directly in your terminal with support for multiple reading modes, bookmarks, and smart position restoration.
 
@@ -34,7 +34,7 @@ A powerful terminal-based reader for modern document formats. Read EPUB, DOCX, F
 ### 📊 Book Management
 - **Reading Progress** - Track percentage read and last read time for all books
 - **Book List** - View all previously read books with progress metadata
-- **History Persistence** - Reading history stored in `~/.lekto/history.json`
+- **History Persistence** - Reading history stored in `~/.novex/history.json`
 
 ## Installation
 
@@ -44,13 +44,13 @@ A powerful terminal-based reader for modern document formats. Read EPUB, DOCX, F
 
 ### From Source
 ```bash
-git clone https://github.com/mjbeswick/lekto-cli.git
-cd lekto-cli
+git clone https://github.com/mjbeswick/novex.git
+cd novex
 bun install
 bun run build
 ```
 
-The compiled binary will be available at `./lekto-cli`.
+The compiled binary will be available at `./novex`.
 
 ## Usage
 
@@ -58,17 +58,17 @@ The compiled binary will be available at `./lekto-cli`.
 
 Open a file interactively:
 ```bash
-lekto
+novex
 ```
 
 Open a specific file:
 ```bash
-lekto read path/to/book.epub
+novex read path/to/book.epub
 ```
 
 View your reading list:
 ```bash
-lekto list
+novex list
 ```
 
 ### Command Options
@@ -89,16 +89,16 @@ Open a file for reading.
 **Examples:**
 ```bash
 # Open in speed reading mode at 300 WPM
-lekto read book.epub --mode speed --wpm 300
+novex read book.epub --mode speed --wpm 300
 
 # Open with light theme and no position saving
-lekto read book.docx --theme light --no-save
+novex read book.docx --theme light --no-save
 
 # Start at a specific position
-lekto read book.epub --position page:42
+novex read book.epub --position page:42
 
 # Enable text-to-speech
-lekto read book.epub --tts
+novex read book.epub --tts
 ```
 
 #### `list`
@@ -153,7 +153,7 @@ From the list, you can:
 ### Reading History
 Reading position and bookmarks are automatically saved to:
 ```
-~/.lekto/history.json
+~/.novex/history.json
 ```
 
 This file stores:
@@ -167,7 +167,7 @@ This file stores:
 ### Daily Reading Session
 ```bash
 # Open your reading list
-lekto list
+novex list
 
 # Select a book to continue reading
 # It automatically opens to your saved position
@@ -176,7 +176,7 @@ lekto list
 ### Speed Reading
 ```bash
 # Start in speed mode with 400 WPM
-lekto read novel.epub --mode speed --wpm 400
+novex read novel.epub --mode speed --wpm 400
 
 # Adjust speed on-the-fly or switch modes during reading
 ```
@@ -184,13 +184,13 @@ lekto read novel.epub --mode speed --wpm 400
 ### Markdown Documentation
 ```bash
 # Read markdown files with syntax highlighting
-lekto read documentation.md
+novex read documentation.md
 ```
 
 ### Custom Layout
 ```bash
 # Set a specific line width for better readability
-lekto read book.epub --line-width 80
+novex read book.epub --line-width 80
 ```
 
 ## Architecture
@@ -221,7 +221,7 @@ lekto read book.epub --line-width 80
 ### Book position not restoring
 - Check that `--no-save` is not being used
 - Verify the file hasn't been modified (hash-based tracking)
-- Check `~/.lekto/history.json` exists and is readable
+- Check `~/.novex/history.json` exists and is readable
 
 ### Text rendering issues
 - Ensure terminal supports 256 colors: `echo $TERM`

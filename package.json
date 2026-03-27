@@ -1,13 +1,13 @@
 {
-  "name": "lekto-cli",
+  "name": "novex",
   "version": "0.1.0",
   "description": "Terminal-based reader for EPUB, DOCX, FB2, Markdown, and plain text",
   "bin": {
-    "lekto": "./src/cli.ts"
+    "novex": "./src/cli.ts"
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "build": "bun build ./src/cli.ts --target bun --outfile lekto-cli",
+    "build": "bun build ./src/cli.ts --target bun --outfile novex",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
