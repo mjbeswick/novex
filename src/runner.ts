@@ -412,29 +412,26 @@ function createSelectionFromWordIndex(
     // Search lines for this word
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const ansiLine = lines[lineIdx];
-      const w = wordAtColumn(ansiLine, 0); // Start from column 0
-      if (w && w.text.toLowerCase() === word.text.toLowerCase()) {
-        // Found a matching word, create selection
-        let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
-        if (!para) para = { start: lineIdx, end: lineIdx };
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const re = /\S+/g;
+      let m: RegExpExecArray | null;
 
-        // Find exact column position
-        const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
-        const re = /\S+/g;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(stripped)) !== null) {
-          if (m.index <= lineIdx && m.index + m[0].length > lineIdx) {
-            return {
-              pageIndex: pageIdx,
-              paraStart: para.start,
-              paraEnd: para.end,
-              wordText: word.text,
-              wordIndex: wordIdx,
-              wordLine: lineIdx,
-              wordColStart: m.index,
-              wordColEnd: m.index + m[0].length - 1,
-            };
-          }
+      while ((m = re.exec(stripped)) !== null) {
+        if (m[0].toLowerCase() === word.text.toLowerCase()) {
+          // Found matching word, create selection
+          let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
+          if (!para) para = { start: lineIdx, end: lineIdx };
+
+          return {
+            pageIndex: pageIdx,
+            paraStart: para.start,
+            paraEnd: para.end,
+            wordText: word.text,
+            wordIndex: wordIdx,
+            wordLine: lineIdx,
+            wordColStart: m.index,
+            wordColEnd: m.index + m[0].length - 1,
+          };
         }
       }
     }
