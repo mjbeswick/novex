@@ -250,6 +250,9 @@ export async function runSession(
   let currentWord = startWord;
   let currentScroll = startScroll;
 
+  // Track whether we're on the initial load (don't restore from word position on first entry to page mode)
+  let isInitialLoad = true;
+
   // Flatten all page lines for scroll view
   let allLines: string[] = pages.flatMap((p) => p.lines);
 
@@ -279,9 +282,10 @@ export async function runSession(
             chunks,
             (idx) => { currentWord = idx; },
             () => resizePending,
-            currentWord,
+            isInitialLoad ? null : currentWord,
             words
           );
+          isInitialLoad = false;
           break;
 
         case "scroll":

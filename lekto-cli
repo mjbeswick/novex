@@ -40602,6 +40602,7 @@ async function runSession(content, options2, initialPosition) {
   let currentPage = startPage;
   let currentWord = startWord;
   let currentScroll = startScroll;
+  let isInitialLoad = true;
   let allLines = pages.flatMap((p) => p.lines);
   enterAltScreen();
   hideCursor();
@@ -40623,7 +40624,8 @@ async function runSession(content, options2, initialPosition) {
             running = false;
           }, words, chunks, (idx) => {
             currentWord = idx;
-          }, () => resizePending, currentWord, words);
+          }, () => resizePending, isInitialLoad ? null : currentWord, words);
+          isInitialLoad = false;
           break;
         case "scroll":
           currentScroll = await runScrollMode(content, options2, allLines, currentScroll, (newMode) => {
