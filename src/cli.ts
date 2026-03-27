@@ -150,7 +150,8 @@ program
               const format = detectFormat(source, buffer);
               const content = await convertToContent(source, buffer, format);
 
-              const state = await getFileState(content.hash);
+              // Use the book's hash from the list, not the newly computed hash
+              const state = await getFileState(book.hash);
               const initialPosition = state?.lastPosition;
 
               const options: CLIOptions = {
