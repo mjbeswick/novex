@@ -457,6 +457,18 @@ async function runPageMode(
     };
   }
 
+  function checkIsBookmarked(sel: SelectionState | null): boolean {
+    let pos: string;
+    if (sel?.wordText) {
+      pos = positionToString({ type: "word", index: sel.wordIndex ?? 0 });
+    } else if (sel) {
+      pos = positionToString({ type: "page", page: sel.pageIndex });
+    } else {
+      pos = positionToString({ type: "page", page: currentPage });
+    }
+    return localBookmarks.some(bm => bm.position === pos);
+  }
+
   const view = new PageView({
     pages,
     currentPage,
@@ -466,6 +478,7 @@ async function runPageMode(
     chapterTitle: getChapterTitle(),
     title: content.title,
     selection: null,
+    isBookmarked: checkIsBookmarked(null),
     ...(preparedCover ? { coverImageEscape: preparedCover.escape, coverImageRows: preparedCover.rows } : {}),
     ...bookmarkLineState(),
   });
@@ -488,7 +501,7 @@ async function runPageMode(
         currentPage = clamp(currentPage + step, 0, max);
         if (getTerminalSize().cols >= SPREAD_MIN_COLS) currentPage -= currentPage % 2; // snap even
         selection = null;
-        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
+        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
         view.render();
         if (!options.noSave) {
           updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
@@ -498,7 +511,7 @@ async function runPageMode(
         currentPage = clamp(currentPage - step, 0, pages.length - 1);
         if (getTerminalSize().cols >= SPREAD_MIN_COLS) currentPage -= currentPage % 2;
         selection = null;
-        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
+        view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
         view.render();
         if (!options.noSave) {
           updateLastPosition(content.hash, positionToString({ type: "page", page: currentPage })).catch(() => {});
@@ -526,7 +539,7 @@ async function runPageMode(
           await addBookmark(content.hash, newBm, content.source, content.title).catch(() => {});
           localBookmarks.push(newBm);
         }
-        view.updateState({ bookmarkCount: localBookmarks.length, ...bookmarkLineState() });
+        view.updateState({ bookmarkCount: localBookmarks.length, isBookmarked: checkIsBookmarked(selection), ...bookmarkLineState() });
         view.render();
       } else if (action === "speed") {
         if (selection?.wordIndex != null) {
@@ -564,13 +577,13 @@ async function runPageMode(
           if (results.length > 0) {
             currentPage = results[0].pageIndex;
             selection = null;
-            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
+            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
           }
         }
         view.render();
       } else if (action === "escape") {
         selection = null;
-        view.updateState({ selection: null });
+        view.updateState({ selection: null, isBookmarked: checkIsBookmarked(null) });
         view.render();
       } else if (action === "tts") {
         if (selection?.wordIndex != null || selection?.wordText != null) {
@@ -596,7 +609,7 @@ async function runPageMode(
           if (pos.type === "page") {
             currentPage = clamp(pos.page, 0, pages.length - 1);
             selection = null;
-            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, ...bookmarkLineState() });
+            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
           } else if (pos.type === "word") {
             setCurrentWord(pos.index);
             switchMode("speed");
@@ -606,7 +619,7 @@ async function runPageMode(
             return currentPage;
           }
         }
-        view.updateState({ bookmarkCount: localBookmarks.length, ...bookmarkLineState() });
+        view.updateState({ bookmarkCount: localBookmarks.length, isBookmarked: checkIsBookmarked(selection), ...bookmarkLineState() });
         view.render();
       } else if (typeof action === "object" && action !== null && action.type === "click") {
         const { cols, rows } = getTerminalSize();
@@ -696,7 +709,8 @@ async function runPageMode(
               wordColStart: selection.wordColStart,
               wordColEnd: selection.wordColEnd,
               wordText: selection.wordText,
-            } : null
+            } : null,
+            isBookmarked: checkIsBookmarked(selection),
           });
           view.render();
         }

@@ -26,6 +26,8 @@ export interface PageViewState {
   bookmarkedLines: number[];
   /** 0-based line indices within the right page (spread mode only) that have a bookmark marker. */
   bookmarkedLinesRight: number[];
+  /** Whether the current page or selected word is bookmarked. */
+  isBookmarked: boolean;
   /** Pre-rendered terminal escape sequence for cover image (shown on page 0). */
   coverImageEscape?: string;
   /** Number of rows the cover image occupies. */
@@ -208,13 +210,14 @@ export class PageView {
     }
 
     // Footer separator + hints
+    const bmLabel = this.state.isBookmarked ? "[b]ookmarked ◆" : "[b]ookmark";
     let hintsText: string;
     if (!selection) {
-      hintsText = "[n]ext [p]rev [b]ookmark [B]marks [s]peed [v]scroll [/]search [q]uit [?]help";
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = `Para selected · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
+      hintsText = `Para selected · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 
     moveTo(rows - 1, 1);
@@ -340,13 +343,14 @@ export class PageView {
     }
 
     // ── Footer separator + key hints ──────────────────────────────────────────
+    const bmLabel = this.state.isBookmarked ? "[b]ookmarked ◆" : "[b]ookmark";
     let hintsText: string;
     if (!selection) {
-      hintsText = "[n]ext [p]rev [b]ookmark [B]marks [s]peed [v]scroll [/]search [q]uit [?]help";
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = `Para selected · [s]peed [b]ookmark [B]marks [t]ts [esc]clear`;
+      hintsText = `Para selected · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 
     const gutterBot = "─".repeat(Math.floor(GUTTER / 2)) + "┴" + "─".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
