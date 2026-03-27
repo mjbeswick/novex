@@ -43,7 +43,7 @@ export async function convertFb2(
   let chapterIndex = 0;
 
   for (const body of mainBodies) {
-    // Each top-level <section> in a body becomes a chapter
+    // Each section in a body becomes a chapter, with hierarchy support
     const sections = body.querySelectorAll(":scope > section");
 
     if (sections.length === 0) {
@@ -52,14 +52,13 @@ export async function convertFb2(
       const text = htmlToPlainText(html);
       const title = extractSectionTitle(body.innerHTML) || docTitle;
 
-      chapters.push({ title, html, text, index: chapterIndex++ });
+      chapters.push({ title, html, text, index: chapterIndex++, level: 1, children: [] });
     } else {
+      // Recursively process sections and build hierarchy
       for (const section of sections) {
-        const html = convertFb2NodeToHtml(section.innerHTML);
-        const text = htmlToPlainText(html);
-        const title = extractSectionTitle(section.innerHTML) || docTitle;
-
-        chapters.push({ title, html, text, index: chapterIndex++ });
+        extractSectionsRecursive(section, chapters, chapterIndex, 1, undefined);
+        // Update chapterIndex based on how many chapters were added
+        chapterIndex = chapters.length;
       }
     }
   }
@@ -86,6 +85,55 @@ export async function convertFb2(
     chapters,
     images: images.size > 0 ? images : undefined,
   };
+}
+
+/**
+ * Recursively extract sections from an FB2 element and build hierarchy.
+ */
+function extractSectionsRecursive(
+  sectionEl: any,
+  chapters: Chapter[],
+  currentIndex: number,
+  level: number,
+  parentIndex: number | undefined
+): void {
+  // Extract this section's content (but not subsections)
+  const childSections = sectionEl.querySelectorAll(":scope > section");
+
+  // Get content of this section excluding child sections
+  let html = convertFb2NodeToHtml(sectionEl.innerHTML);
+  // Remove child sections from the HTML to avoid duplication
+  for (const childSection of childSections) {
+    const childHtml = childSection.outerHTML || (`<section>${childSection.innerHTML}</section>`);
+    html = html.replace(childHtml, "");
+  }
+
+  const text = htmlToPlainText(html);
+  const title = extractSectionTitle(html) || `Section ${currentIndex + 1}`;
+  const children: number[] = [];
+
+  const chapterIdx = chapters.length;
+  chapters.push({
+    title,
+    html,
+    text,
+    index: chapterIdx,
+    level,
+    parentIndex,
+    children,
+  });
+
+  // Recursively process child sections
+  for (const childSection of childSections) {
+    const childStartIdx = chapters.length;
+    extractSectionsRecursive(childSection, chapters, childStartIdx, level + 1, chapterIdx);
+    // Track children
+    for (let i = childStartIdx; i < chapters.length; i++) {
+      if (chapters[i].parentIndex === chapterIdx) {
+        children.push(i);
+      }
+    }
+  }
 }
 
 /**

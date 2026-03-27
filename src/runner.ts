@@ -22,6 +22,7 @@ import {
   SpeedReader,
   showHelp,
   showBookmarks,
+  showToc,
   searchContent,
   SearchBar,
   SPREAD_MIN_COLS,
@@ -726,6 +727,18 @@ async function runPageMode(
             view.render();
           }
         }
+      } else if (action === "toc") {
+        const selectedChapterIdx = await showToc(content.chapters, pages[currentPage]?.chapterIndex ?? 0, options.theme);
+        if (selectedChapterIdx !== null) {
+          // Find first page of selected chapter
+          const targetPage = pages.findIndex((p) => p.chapterIndex === selectedChapterIdx);
+          if (targetPage !== -1) {
+            currentPage = targetPage;
+            selection = null;
+            view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
+          }
+        }
+        view.render();
       } else if (typeof action === "object" && action !== null && action.type === "click") {
         const { cols, rows } = getTerminalSize();
         const contentRows = rows - 4;

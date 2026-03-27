@@ -231,7 +231,7 @@ export class PageView {
     const imageHint = hasImages ? " [i]mage" : "";
     let hintsText: string;
     if (!selection) {
-      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search${imageHint} [q]uit [?]help`;
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
@@ -386,7 +386,7 @@ export class PageView {
     const bmLabel = this.state.isBookmarked ? "[b]ookmarked ◆" : "[b]ookmark";
     let hintsText: string;
     if (!selection) {
-      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [/]search [q]uit [?]help`;
+      hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
@@ -425,6 +425,7 @@ export class PageView {
     | "tts"
     | "bookmarks"
     | "image"
+    | "toc"
     | { type: "click"; row: number; col: number }
     | null {
     if (key.startsWith("mouse:")) {
@@ -460,6 +461,8 @@ export class PageView {
         return "escape";
       case "t":
         return "tts";
+      case "T":
+        return "toc";
       case "B":
         return "bookmarks";
       case "i":

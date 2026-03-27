@@ -39,6 +39,16 @@ export interface Chapter {
   text: string;
   /** Index within the document */
   index: number;
+  /** Heading level: 1 for chapters, 2+ for sections (optional, for hierarchy) */
+  level?: number;
+  /** Index of parent chapter (for nested sections) */
+  parentIndex?: number;
+  /** Indices of child chapters/sections */
+  children?: number[];
+  /** Line number where this section starts (after pagination) */
+  startLine?: number;
+  /** Line number where this section ends (after pagination) */
+  endLine?: number;
 }
 
 export interface Page {

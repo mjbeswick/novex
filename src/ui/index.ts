@@ -24,5 +24,6 @@ export { ModeSelector } from "./mode-selector";
 export { showHelp } from "./help";
 export { showBookmarks } from "./bookmark-list";
 export { showBooksList } from "./books-list";
+export { showToc } from "./toc-view";
 export { searchContent, highlightMatch, SearchBar } from "./search";
 export type { SearchResult } from "./search";
