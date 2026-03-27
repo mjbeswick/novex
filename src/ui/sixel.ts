@@ -41,24 +41,50 @@ function toBuffer(imageData: Buffer | string): Buffer {
   return imageData;
 }
 
+export interface PreparedImage {
+  /** Terminal escape sequence to render the image */
+  escape: string;
+  /** Number of terminal rows the image occupies */
+  rows: number;
+}
+
 /**
- * Displays an image using iTerm2's inline image protocol (OSC 1337).
+ * Prepares an inline image for rendering in the terminal.
+ * Returns the escape sequence and number of rows it occupies,
+ * or null if the terminal doesn't support inline images.
  */
-function displayITermImage(imageBuffer: Buffer): void {
-  const base64 = imageBuffer.toString("base64");
-  // OSC 1337 ; File=[params] : base64data ST
-  // width=auto;height=auto;preserveAspectRatio=1;inline=1
-  const osc = `\x1b]1337;File=inline=1;width=40;preserveAspectRatio=1:${base64}\x07`;
-  process.stdout.write(osc);
-  process.stdout.write("\n");
+export async function prepareInlineImage(
+  imageData: Buffer | string,
+  heightRows: number = 15
+): Promise<PreparedImage | null> {
+  try {
+    const imageBuffer = toBuffer(imageData);
+
+    if (isITerm()) {
+      const base64 = imageBuffer.toString("base64");
+      const escape = `\x1b]1337;File=inline=1;height=${heightRows};preserveAspectRatio=1:${base64}\x07`;
+      return { escape, rows: heightRows };
+    }
+
+    if (supportsSixel()) {
+      const sixelData = await convertToSixel(imageBuffer, heightRows);
+      if (sixelData) {
+        return { escape: sixelData, rows: heightRows };
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Converts image data to sixel format using ImageMagick.
  */
-async function imageToSixel(
+async function convertToSixel(
   imageBuffer: Buffer,
-  maxWidth: number = 40
+  heightRows: number
 ): Promise<string | null> {
   const tmpFile = `/tmp/lekto_cover_${Date.now()}.png`;
   const outFile = `/tmp/lekto_sixel_${Date.now()}.txt`;
@@ -66,10 +92,12 @@ async function imageToSixel(
   await Bun.write(tmpFile, imageBuffer);
 
   try {
+    // Estimate pixel height: assume ~16px per character row
+    const pixelHeight = heightRows * 16;
     const proc = Bun.spawn([
       "sh",
       "-c",
-      `convert "${tmpFile}" -resize ${maxWidth}x30 sixel:"${outFile}" 2>/dev/null`,
+      `convert "${tmpFile}" -resize x${pixelHeight} sixel:"${outFile}" 2>/dev/null`,
     ]);
     await proc.exited;
 
@@ -88,34 +116,5 @@ async function imageToSixel(
       // ignore cleanup errors
     }
     return null;
-  }
-}
-
-/**
- * Displays an image in the terminal.
- * Uses iTerm2 inline images or sixel depending on the terminal.
- * Silently skips if the terminal doesn't support image display.
- */
-export async function displayImage(
-  imageData: Buffer | string,
-  _title: string = "Cover"
-): Promise<void> {
-  try {
-    const imageBuffer = toBuffer(imageData);
-
-    if (isITerm()) {
-      displayITermImage(imageBuffer);
-      return;
-    }
-
-    if (supportsSixel()) {
-      const sixelData = await imageToSixel(imageBuffer);
-      if (sixelData && sixelData.length > 0) {
-        process.stdout.write(sixelData);
-        process.stdout.write("\n");
-      }
-    }
-  } catch {
-    // Silently fail - cover display is optional
   }
 }

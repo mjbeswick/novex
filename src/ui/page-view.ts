@@ -26,6 +26,10 @@ export interface PageViewState {
   bookmarkedLines: number[];
   /** 0-based line indices within the right page (spread mode only) that have a bookmark marker. */
   bookmarkedLinesRight: number[];
+  /** Pre-rendered terminal escape sequence for cover image (shown on page 0). */
+  coverImageEscape?: string;
+  /** Number of rows the cover image occupies. */
+  coverImageRows?: number;
 }
 
 /** Minimum terminal width to activate two-page spread layout. */
@@ -167,8 +171,17 @@ export class PageView {
 
     const contentRows = rows - 4;
     const lines = pages[currentPage]?.lines ?? [];
-    for (let i = 0; i < contentRows; i++) {
-      moveTo(i + 3, 1);
+    const { coverImageEscape, coverImageRows: imgRows } = this.state;
+    const showCover = coverImageEscape && imgRows && currentPage === 0;
+    const imageOffset = showCover ? imgRows : 0;
+
+    if (showCover) {
+      moveTo(3, 1);
+      process.stdout.write(coverImageEscape);
+    }
+
+    for (let i = 0; i < contentRows - imageOffset; i++) {
+      moveTo(i + 3 + imageOffset, 1);
       const inSel = selection && selection.pageIndex === currentPage &&
         i >= selection.paraStart && i <= selection.paraEnd;
       let lineStr = lines[i] ?? "";
@@ -261,8 +274,17 @@ export class PageView {
 
     // ── Content rows ──────────────────────────────────────────────────────────
     const contentRows = rows - 4;
-    for (let i = 0; i < contentRows; i++) {
-      moveTo(i + 3, 1);
+    const { coverImageEscape, coverImageRows: imgRows } = this.state;
+    const showCover = coverImageEscape && imgRows && leftIdx === 0;
+    const imageOffset = showCover ? imgRows : 0;
+
+    if (showCover) {
+      moveTo(3, 1);
+      process.stdout.write(coverImageEscape);
+    }
+
+    for (let i = 0; i < contentRows - imageOffset; i++) {
+      moveTo(i + 3 + imageOffset, 1);
 
       // Left side with selection highlight
       const inLeftSel = selection && selection.pageIndex === leftIdx &&

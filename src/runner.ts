@@ -16,7 +16,8 @@ import {
   enableMouseTracking,
   disableMouseTracking,
 } from "./ui/index.ts";
-import { displayImage } from "./ui/sixel.ts";
+import { prepareInlineImage } from "./ui/sixel.ts";
+import type { PreparedImage } from "./ui/sixel.ts";
 import {
   PageView,
   ScrollView,
@@ -220,8 +221,16 @@ export async function runSession(
 ): Promise<void> {
   let { cols, rows } = getTerminalSize();
 
+  // Prepare cover image for inline display
+  const pageHeight = Math.max(1, rows - 4);
+  const coverImageRows = Math.min(15, Math.floor(pageHeight * 0.4));
+  let preparedCover: PreparedImage | null = null;
+  if (content.coverImage) {
+    preparedCover = await prepareInlineImage(content.coverImage, coverImageRows);
+  }
+
   // Build pages
-  let pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
+  let pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme, preparedCover?.rows ?? 0);
 
   // Build words for speed/rsvp
   const words = extractWords(content.text);
@@ -253,17 +262,6 @@ export async function runSession(
   // Flatten all page lines for scroll view
   let allLines: string[] = pages.flatMap((p) => p.lines);
 
-  // Show cover image if available and starting from beginning
-  if (content.coverImage && (!initialPosition || startPage === 0)) {
-    try {
-      await displayImage(content.coverImage, content.title);
-      // Brief pause to show the cover
-      await new Promise(r => setTimeout(r, 1000));
-    } catch {
-      // If cover display fails, just continue
-    }
-  }
-
   enterAltScreen();
   hideCursor();
   enableRawMode();
@@ -276,7 +274,7 @@ export async function runSession(
       if (resizePending) {
         resizePending = false;
         ({ cols, rows } = getTerminalSize());
-        pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme);
+        pages = buildPages(content, contentCols(cols), rows, options.lineWidth, options.theme, preparedCover?.rows ?? 0);
         allLines = pages.flatMap((p) => p.lines);
       }
 
@@ -289,7 +287,8 @@ export async function runSession(
             words,
             chunks,
             (idx) => { currentWord = idx; },
-            () => resizePending
+            () => resizePending,
+            preparedCover
           );
           break;
 
@@ -403,7 +402,8 @@ async function runPageMode(
   allWords: ReturnType<typeof extractWords>,
   _chunks: ReturnType<typeof chunkWords>,
   setCurrentWord: (idx: number) => void,
-  isResizePending: () => boolean
+  isResizePending: () => boolean,
+  preparedCover: PreparedImage | null = null
 ): Promise<number> {
   let currentPage = startPage;
   let selection: SelectionState | null = null;
@@ -464,6 +464,7 @@ async function runPageMode(
     chapterTitle: getChapterTitle(),
     title: content.title,
     selection: null,
+    ...(preparedCover ? { coverImageEscape: preparedCover.escape, coverImageRows: preparedCover.rows } : {}),
     ...bookmarkLineState(),
   });
 
