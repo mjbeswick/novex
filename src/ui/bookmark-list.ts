@@ -122,11 +122,11 @@ export async function showBookmarks(
         t.dim + `  ` + ANSI.reset +
         hotkeyLabel(t, "d", "delete") +
         t.dim + `  ` + ANSI.reset +
-        hotkeyLabel(t, "c", "close")
+        hotkeyLabel(t, "q", "quit")
       );
     } else {
       process.stdout.write(
-        hotkeyLabel(t, "c", "close")
+        hotkeyLabel(t, "q", "quit")
       );
     }
   }

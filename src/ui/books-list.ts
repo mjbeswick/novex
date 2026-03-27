@@ -123,12 +123,12 @@ export async function showBooksList(
         hotkeyLabel(t, "f", "forget") +
         (onBrowse ? t.dim + `  ` + ANSI.reset + hotkeyLabel(t, "b", "browse") : "") +
         t.dim + `  ` + ANSI.reset +
-        hotkeyLabel(t, "c", "close")
+        hotkeyLabel(t, "q", "quit")
       );
     } else {
       process.stdout.write(
         (onBrowse ? hotkeyLabel(t, "b", "browse") + t.dim + `  ` + ANSI.reset : "") +
-        hotkeyLabel(t, "c", "close")
+        hotkeyLabel(t, "q", "quit")
       );
     }
   }

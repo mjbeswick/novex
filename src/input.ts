@@ -338,7 +338,7 @@ async function browseDirContent(rootDir: string, theme: Theme = "dark"): Promise
         t.dim + "  " + ANSI.reset +
         hotkeyLabel(t, "s", "esc back") +
         t.dim + "  " + ANSI.reset +
-        hotkeyLabel(t, "c", "close")
+        hotkeyLabel(t, "q", "quit")
       );
     } else {
       const canGoBack = currentDir !== rootDir;
@@ -351,7 +351,7 @@ async function browseDirContent(rootDir: string, theme: Theme = "dark"): Promise
         (canGoBack
           ? hotkeyLabel(t, "s", "esc back") + t.dim + "  " + ANSI.reset
           : "") +
-        hotkeyLabel(t, "c", "close")
+        hotkeyLabel(t, "q", "quit")
       );
     }
   };
