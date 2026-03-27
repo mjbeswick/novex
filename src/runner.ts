@@ -421,33 +421,23 @@ function createSelectionFromWordIndex(
   const word = allWords[wordIdx];
   if (!word) return null;
 
-  // Count how many times this word (same text, case-insensitive) appears before wordIdx
+  // Count how many times this word (same text, case-insensitive) appears up to and including wordIdx
   // This tells us which occurrence we're looking for
-  let occurrenceNumber = 1; // 1-indexed
-  for (let i = 0; i < wordIdx; i++) {
+  let targetOccurrence = 0;
+  for (let i = 0; i <= wordIdx; i++) {
     if (allWords[i].text.toLowerCase() === word.text.toLowerCase()) {
-      occurrenceNumber++;
+      targetOccurrence++;
     }
   }
 
-  // Find which page this word appears on (approximate by word distribution)
-  let targetPageIdx = 0;
-  if (pages.length > 1) {
-    targetPageIdx = Math.round((wordIdx / allWords.length) * (pages.length - 1));
-    targetPageIdx = Math.max(0, Math.min(targetPageIdx, pages.length - 1));
-  }
-
-  // Search nearby pages for the word, tracking occurrence count across pages
+  // Search all pages in document order, counting occurrences
   let globalOccurrence = 0;
-  for (let offset = 0; offset < pages.length; offset++) {
-    const pageIdx = targetPageIdx + (offset % 2 === 0 ? offset / 2 : -Math.ceil(offset / 2));
-    if (pageIdx < 0 || pageIdx >= pages.length) continue;
-
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
     const page = pages[pageIdx];
     const lines = page?.lines ?? [];
     const groups = getParagraphGroups(lines);
 
-    // Search lines for this word, counting occurrences across all pages
+    // Search lines for this word, counting occurrences sequentially
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const ansiLine = lines[lineIdx];
       const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
@@ -458,7 +448,7 @@ function createSelectionFromWordIndex(
         if (m[0].toLowerCase() === word.text.toLowerCase()) {
           globalOccurrence++;
           // If this is the occurrence we're looking for, select it
-          if (globalOccurrence === occurrenceNumber) {
+          if (globalOccurrence === targetOccurrence) {
             let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
             if (!para) para = { start: lineIdx, end: lineIdx };
 
@@ -478,9 +468,15 @@ function createSelectionFromWordIndex(
     }
   }
 
-  // Fallback: create selection without exact position
+  // Fallback: estimate page by word distribution
+  let estimatedPageIdx = 0;
+  if (pages.length > 1) {
+    estimatedPageIdx = Math.round((wordIdx / allWords.length) * (pages.length - 1));
+    estimatedPageIdx = Math.max(0, Math.min(estimatedPageIdx, pages.length - 1));
+  }
+
   return {
-    pageIndex: targetPageIdx,
+    pageIndex: estimatedPageIdx,
     paraStart: 0,
     paraEnd: 0,
     wordText: word.text,
