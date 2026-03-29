@@ -39125,7 +39125,7 @@ class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
-      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
@@ -39133,7 +39133,7 @@ class PageView {
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
-      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
     this.lastHints = hintsText;
     moveTo(rows - 1, 1);
@@ -39234,7 +39234,7 @@ class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
-      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
@@ -39242,7 +39242,7 @@ class PageView {
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
-      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
     this.lastHints = hintsText;
     const gutterBot = "\u2500".repeat(Math.floor(GUTTER / 2)) + "\u2534" + "\u2500".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
@@ -39288,6 +39288,7 @@ class PageView {
         return "search";
       case ":":
         return "command";
+      case "c":
       case "escape":
         return "escape";
       case "t":

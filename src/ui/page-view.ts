@@ -120,7 +120,7 @@ function highlightWord(line: string, colStart: number, colEnd: number): string {
  * Style hint strings: remove brackets, colour the key in accent+bold, action
  * text stays dim. Single alpha keys are inlined into the following word
  * (e.g. "[n]ext" → "next" with n highlighted); symbol/multi-char keys get a
- * space separator (e.g. "[esc]clear" → "esc clear").
+ * space separator (e.g. "[c]lear" → "esc clear").
  */
 function formatHints(text: string, t: ColorTheme): string {
   return text.replace(/\[([^\]]+)\](\w*)/g, (_m, key: string, rest: string) => {
@@ -285,7 +285,7 @@ export class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
-      hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
@@ -293,7 +293,7 @@ export class PageView {
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
-      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
 
     this.lastHints = hintsText; // Cache for click detection
@@ -449,7 +449,7 @@ export class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
-      hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
@@ -457,7 +457,7 @@ export class PageView {
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
-      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
 
     this.lastHints = hintsText; // Cache for click detection
@@ -533,6 +533,7 @@ export class PageView {
         return "search";
       case ":":
         return "command";
+      case "c":
       case "escape":
         return "escape";
       case "t":
