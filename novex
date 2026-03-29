@@ -36324,6 +36324,7 @@ async function convertEpub(buffer, source, hash) {
   }
   const tocTitles = await loadTocTitles(zip, opfRoot, manifest, opfDir);
   const chapters = [];
+  const linkMap = new Map;
   let chapterIndex = 0;
   for (const idref of spineIdrefs) {
     const manifestEntry = manifest.get(idref);
@@ -36341,6 +36342,11 @@ async function convertEpub(buffer, source, hash) {
     const bodyHtml = extractBody(chapterHtml);
     const title = tocTitles.get(href) ?? tocTitles.get(fullPath) ?? extractHeadingTitle(bodyHtml) ?? `Chapter ${chapterIndex + 1}`;
     const text = htmlToPlainText(bodyHtml);
+    linkMap.set(href, chapterIndex);
+    linkMap.set(fullPath, chapterIndex);
+    const basename2 = href.split("/").pop() ?? href;
+    if (basename2 !== href)
+      linkMap.set(basename2, chapterIndex);
     chapters.push({
       title,
       html: bodyHtml,
@@ -36368,7 +36374,8 @@ async function convertEpub(buffer, source, hash) {
     source,
     hash,
     chapters,
-    images: images.size > 0 ? images : undefined
+    images: images.size > 0 ? images : undefined,
+    linkMap: linkMap.size > 0 ? linkMap : undefined
   };
 }
 function extractBody(html) {
@@ -38958,7 +38965,7 @@ init_terminal();
 init_themes();
 var SPREAD_MIN_COLS = 120;
 function visLen(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 function hasImage(line) {
   return /\[Image \d+\]/.test(line);
@@ -38976,6 +38983,14 @@ function fitAnsi(str, width) {
       if (end !== -1) {
         if (visible < width)
           result += str.slice(i, end + 1);
+        i = end + 1;
+        continue;
+      }
+    }
+    if (str.charCodeAt(i) === 27 && str[i + 1] === "]" && str[i + 2] === "8" && str[i + 3] === ";") {
+      const end = str.indexOf("\x07", i + 4);
+      if (end !== -1) {
+        result += str.slice(i, end + 1);
         i = end + 1;
         continue;
       }
@@ -38998,6 +39013,14 @@ function highlightWord(line, colStart, colEnd) {
   while (i < line.length) {
     if (line.charCodeAt(i) === 27 && line[i + 1] === "[") {
       const end = line.indexOf("m", i + 2);
+      if (end !== -1) {
+        result += line.slice(i, end + 1);
+        i = end + 1;
+        continue;
+      }
+    }
+    if (line.charCodeAt(i) === 27 && line[i + 1] === "]" && line[i + 2] === "8" && line[i + 3] === ";") {
+      const end = line.indexOf("\x07", i + 4);
       if (end !== -1) {
         result += line.slice(i, end + 1);
         i = end + 1;
@@ -39166,19 +39189,19 @@ class PageView {
       let indexPath = "";
       const wordIdx = selection.wordIndexInPara ?? selection.wordIndex;
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx + 1}]`;
+        indexPath = ` \xA7${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}.${wordIdx + 1}`;
       } else if (wordIdx !== null) {
-        indexPath = ` [word ${wordIdx + 1}]`;
+        indexPath = ` #${wordIdx + 1}`;
       }
       hintsText = `"${selection.wordText}"${indexPath} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}]`;
-      } else if (selection.pageIndex !== undefined) {
-        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+        const wc = selection.wordCount;
+        const wcLabel = wc ? ` (${wc} words)` : "";
+        paraInfo = ` \xA7${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}${wcLabel}`;
       }
-      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
+      hintsText = `Para${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
     this.lastHints = hintsText;
     moveTo(rows - 1, 1);
@@ -39281,19 +39304,19 @@ class PageView {
       let indexPath = "";
       const wordIdx = selection.wordIndexInPara ?? selection.wordIndex;
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx + 1}]`;
+        indexPath = ` \xA7${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}.${wordIdx + 1}`;
       } else if (wordIdx !== null) {
-        indexPath = ` [word ${wordIdx + 1}]`;
+        indexPath = ` #${wordIdx + 1}`;
       }
       hintsText = `"${selection.wordText}"${indexPath} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}]`;
-      } else if (selection.pageIndex !== undefined) {
-        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+        const wc = selection.wordCount;
+        const wcLabel = wc ? ` (${wc} words)` : "";
+        paraInfo = ` \xA7${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}${wcLabel}`;
       }
-      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
+      hintsText = `Para${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
     this.lastHints = hintsText;
     const gutterBot = "\u2500".repeat(Math.floor(GUTTER / 2)) + "\u2534" + "\u2500".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
@@ -39374,7 +39397,7 @@ function formatHints2(text, t) {
   });
 }
 function visLen2(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 function padEnd(str, width) {
   const v = visLen2(str);
@@ -39463,7 +39486,7 @@ function centerPad(str, width) {
   return " ".repeat(pad) + str + " ".repeat(width - visible - pad);
 }
 function stripAnsi(str) {
-  return str.replace(/\x1b\[[0-9;]*m/g, "");
+  return str.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
 }
 function orpIndex(word) {
   const n = word.replace(/[^a-zA-Z0-9]/g, "").length || word.length;
@@ -39537,8 +39560,10 @@ class SpeedReader {
     const currentWordIndex = chunk && chunk.length > 0 ? chunk[0].index : 0;
     let indexPath = "";
     if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
-      const wordIdx = (wordIndexInPara ?? currentWordIndex) + 1;
-      const indexContent = `ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}`;
+      let indexContent = `\xA7${chapterIndex + 1}.${paraIndexInChapter + 1}`;
+      if (wordIndexInPara !== null && wordIndexInPara !== undefined) {
+        indexContent += `.${wordIndexInPara + 1}`;
+      }
       indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
     }
     const wordInfo = currentWord ? `"${currentWord}"${indexPath}` : "";
@@ -39790,7 +39815,7 @@ function center2(str, width) {
   return " ".repeat(pad) + str + " ".repeat(width - str.length - pad);
 }
 function visLen3(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 function padToWidth(str, width) {
   const vl = visLen3(str);
@@ -39948,7 +39973,7 @@ function center3(str, width) {
   return " ".repeat(pad) + str + " ".repeat(width - str.length - pad);
 }
 function visLen4(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 function padToWidth2(str, width) {
   const vl = visLen4(str);
@@ -40080,7 +40105,7 @@ function center4(str, width) {
   return " ".repeat(pad) + str + " ".repeat(width - str.length - pad);
 }
 function visLen5(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 function padToWidth3(str, width) {
   const vl = visLen5(str);
@@ -40343,9 +40368,9 @@ function paginateText(lines, pageHeight) {
   return pages;
 }
 function visibleLength(str) {
-  return str.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return str.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
-function wrapHtml(html, width, theme = "dark") {
+function wrapHtml(html, width, theme = "dark", linkMap) {
   if (width <= 0)
     width = 80;
   const cs = contentStyle(theme);
@@ -40424,7 +40449,25 @@ ${lines.join(`
 `)}
 `;
   });
-  processed = processed.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, (_, txt) => `${cs.link}${txt}${ANSI_RESET}`);
+  processed = processed.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_, attrs, txt) => {
+    const hrefMatch = attrs.match(/href\s*=\s*["']([^"']*)["']/i);
+    const href = hrefMatch ? hrefMatch[1] : "";
+    const plainTxt = txt.replace(/<[^>]+>/g, "");
+    let url = "";
+    if (href && /^https?:\/\//i.test(href)) {
+      url = href;
+    } else if (href && linkMap) {
+      const hrefBase = href.split("#")[0];
+      const basename2 = hrefBase.split("/").pop() ?? hrefBase;
+      const chIdx = linkMap.get(hrefBase) ?? linkMap.get(basename2);
+      if (chIdx !== undefined)
+        url = `chapter:${chIdx}`;
+    }
+    if (url) {
+      return `\x1B]8;;${url}\x07${cs.link}${plainTxt}${ANSI_RESET}\x1B]8;;\x07`;
+    }
+    return `${cs.link}${plainTxt}${ANSI_RESET}`;
+  });
   processed = processed.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_, src) => `${cs.code}\`${src.replace(/<[^>]+>/g, "")}\`${ANSI_RESET}`);
   processed = processed.replace(/<(?:b|strong)\b[^>]*>([\s\S]*?)<\/(?:b|strong)>/gi, (_, content) => `${cs.bold}${ANSI_BOLD_ON}${content}${ANSI_BOLD_OFF}${ANSI_RESET}`);
   processed = processed.replace(/<(?:i|em)\b[^>]*>([\s\S]*?)<\/(?:i|em)>/gi, (_, content) => `${ANSI_ITALIC_ON}${content}${ANSI_ITALIC_OFF}`);
@@ -40509,6 +40552,43 @@ ${lines.join(`
     e--;
   return deduped.slice(s, e + 1);
 }
+function getAnsiState(str) {
+  const sgrStack = [];
+  let osc8 = "";
+  let i = 0;
+  while (i < str.length) {
+    if (str.charCodeAt(i) === 27 && str[i + 1] === "[") {
+      const end = str.indexOf("m", i + 2);
+      if (end !== -1) {
+        const seq = str.slice(i, end + 1);
+        if (seq === "\x1B[0m" || seq === ANSI_RESET) {
+          sgrStack.length = 0;
+        } else {
+          sgrStack.push(seq);
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+    if (str.charCodeAt(i) === 27 && str[i + 1] === "]" && str[i + 2] === "8" && str[i + 3] === ";") {
+      const bellIdx = str.indexOf("\x07", i + 4);
+      if (bellIdx !== -1) {
+        const payload = str.slice(i + 4, bellIdx);
+        const url = payload.startsWith(";") ? payload.slice(1) : payload;
+        osc8 = url ? str.slice(i, bellIdx + 1) : "";
+        i = bellIdx + 1;
+        continue;
+      }
+    }
+    i++;
+  }
+  const hasState = sgrStack.length > 0 || osc8;
+  if (!hasState)
+    return { prefix: "", closeSeq: "" };
+  const closeSeq = (sgrStack.length > 0 ? ANSI_RESET : "") + (osc8 ? "\x1B]8;;\x07" : "");
+  const prefix = osc8 + sgrStack.join("");
+  return { prefix, closeSeq };
+}
 function wrapSegment(text, width) {
   if (width <= 0)
     width = 80;
@@ -40525,8 +40605,9 @@ function wrapSegment(text, width) {
       currentLine += " " + token;
       currentVisible += 1 + tokenVisible;
     } else {
-      lines.push(currentLine);
-      currentLine = token;
+      const { prefix, closeSeq } = getAnsiState(currentLine);
+      lines.push(currentLine + closeSeq);
+      currentLine = prefix + token;
       currentVisible = tokenVisible;
     }
   }
@@ -40541,7 +40622,7 @@ function buildPages(content, cols, rows, lineWidth, theme = "dark") {
   const pages = [];
   let globalPageIndex = 0;
   for (const chapter of content.chapters) {
-    const lines = wrapHtml(chapter.html, effectiveWidth, theme);
+    const lines = wrapHtml(chapter.html, effectiveWidth, theme, content.linkMap);
     const chapterPages = paginateText(lines, pageHeight);
     for (let pageIndexInChapter = 0;pageIndexInChapter < chapterPages.length; pageIndexInChapter++) {
       pages.push({
@@ -40870,7 +40951,7 @@ function getParagraphGroups(lines) {
   const groups = [];
   let start = -1;
   for (let i = 0;i < lines.length; i++) {
-    const blank = lines[i].replace(/\x1b\[[0-9;]*m/g, "").trim().length === 0;
+    const blank = lines[i].replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").trim().length === 0;
     if (!blank && start === -1)
       start = i;
     else if (blank && start !== -1) {
@@ -40883,13 +40964,42 @@ function getParagraphGroups(lines) {
   return groups;
 }
 function wordAtColumn(ansiLine, col) {
-  const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+  const stripped = ansiLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
   const re = /\S+/g;
   let m;
   while ((m = re.exec(stripped)) !== null) {
     if (col >= m.index && col < m.index + m[0].length) {
       return { text: m[0], start: m.index, end: m.index + m[0].length - 1 };
     }
+  }
+  return null;
+}
+function linkAtColumn(ansiLine, col) {
+  let visible = 0;
+  let currentUrl = null;
+  let i = 0;
+  while (i < ansiLine.length) {
+    if (ansiLine.charCodeAt(i) === 27 && ansiLine[i + 1] === "[") {
+      const end = ansiLine.indexOf("m", i + 2);
+      if (end !== -1) {
+        i = end + 1;
+        continue;
+      }
+    }
+    if (ansiLine.charCodeAt(i) === 27 && ansiLine[i + 1] === "]" && ansiLine[i + 2] === "8" && ansiLine[i + 3] === ";") {
+      const bellIdx = ansiLine.indexOf("\x07", i + 4);
+      if (bellIdx !== -1) {
+        const payload = ansiLine.slice(i + 4, bellIdx);
+        const url = payload.startsWith(";") ? payload.slice(1) : payload;
+        currentUrl = url || null;
+        i = bellIdx + 1;
+        continue;
+      }
+    }
+    if (visible === col)
+      return currentUrl;
+    visible++;
+    i++;
   }
   return null;
 }
@@ -40934,7 +41044,7 @@ function getWordIndexInParagraph(pages, pageIdx, wordLine, wordColStart, paraSta
     const line = page.lines?.[lineIdx];
     if (!line)
       break;
-    const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+    const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
     const re = /\S+/g;
     let m;
     while ((m = re.exec(stripped)) !== null) {
@@ -40948,19 +41058,61 @@ function getWordIndexInParagraph(pages, pageIdx, wordLine, wordColStart, paraSta
   }
   return null;
 }
+function getWordIndexInParaFromPage(pages, pageIdx, paraStart, paraEnd, targetWordCounter) {
+  const page = pages[pageIdx];
+  if (!page)
+    return null;
+  let wordCount = 0;
+  let counter = 0;
+  for (let pi = 0;pi < pageIdx; pi++) {
+    const p = pages[pi];
+    for (const line of p?.lines ?? []) {
+      const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
+      const re = /\S+/g;
+      while (re.exec(stripped))
+        counter++;
+    }
+  }
+  for (let li = 0;li < (page.lines?.length ?? 0); li++) {
+    const line = page.lines?.[li] ?? "";
+    const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
+    const re = /\S+/g;
+    while (re.exec(stripped)) {
+      if (li >= paraStart && li <= paraEnd) {
+        if (counter === targetWordCounter)
+          return wordCount;
+        wordCount++;
+      }
+      counter++;
+    }
+  }
+  return null;
+}
+function countWordsInParagraph(pages, pageIdx, paraStart, paraEnd) {
+  const page = pages[pageIdx];
+  if (!page)
+    return 0;
+  let count = 0;
+  for (let li = paraStart;li <= paraEnd; li++) {
+    const line = page.lines?.[li] ?? "";
+    const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
+    const re = /\S+/g;
+    while (re.exec(stripped))
+      count++;
+  }
+  return count;
+}
 function getHierarchicalIndexForWord(wordIdx, allWords, pages) {
   const selection = createSelectionFromWordIndex(wordIdx, allWords, pages);
   if (!selection)
     return null;
-  if (selection.wordLine !== null) {
-    const chapterIndex2 = selection.chapterIndex ?? 0;
-    const paraIndexInChapter2 = selection.paraIndexInChapter ?? 0;
-    const wordIndexInPara = selection.wordIndexInPara ?? null;
-    return { chapterIndex: chapterIndex2, paraIndexInChapter: paraIndexInChapter2, wordIndexInPara };
-  }
   const chapterIndex = selection.chapterIndex ?? 0;
   const paraIndexInChapter = selection.paraIndexInChapter ?? 0;
-  return { chapterIndex, paraIndexInChapter, wordIndexInPara: null };
+  let wordIndexInPara = selection.wordIndexInPara;
+  if (wordIndexInPara === null || wordIndexInPara === undefined) {
+    wordIndexInPara = getWordIndexInParaFromPage(pages, selection.pageIndex, selection.paraStart, selection.paraEnd, wordIdx);
+  }
+  return { chapterIndex, paraIndexInChapter, wordIndexInPara };
 }
 function findWordExact(text, allWords, targetPageIdx, targetLineIdx, targetCol, pages) {
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -40977,7 +41129,7 @@ function findWordExact(text, allWords, targetPageIdx, targetLineIdx, targetCol, 
       if (pageIdx === targetPageIdx && lineIdx > targetLineIdx)
         break;
       const ansiLine = lines[lineIdx];
-      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
       const re = /\S+/g;
       let m;
       while ((m = re.exec(stripped)) !== null) {
@@ -41004,7 +41156,7 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
     const groups = getParagraphGroups(lines);
     for (let lineIdx = 0;lineIdx < lines.length; lineIdx++) {
       const ansiLine = lines[lineIdx];
-      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
       const re = /\S+/g;
       let m;
       while ((m = re.exec(stripped)) !== null) {
@@ -41087,7 +41239,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
             const re = new RegExp(`(?:^|\\s)${escaped}(?:\\s|$|[.,;!?:])`, "i");
             let found = false;
             for (let li = 0;li < pageLines.length; li++) {
-              if (re.test((pageLines[li] ?? "").replace(/\x1b\[[0-9;]*m/g, ""))) {
+              if (re.test((pageLines[li] ?? "").replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, ""))) {
                 set.add(li);
                 found = true;
                 break;
@@ -41173,7 +41325,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
           note = `"${selection.wordText}"`;
         } else if (selection) {
           pos = positionToString({ type: "page", page: selection.pageIndex });
-          const firstLine = (pages[selection.pageIndex]?.lines[selection.paraStart] ?? "").replace(/\x1b\[[0-9;]*m/g, "").trim();
+          const firstLine = (pages[selection.pageIndex]?.lines[selection.paraStart] ?? "").replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").trim();
           note = firstLine.length > 40 ? firstLine.slice(0, 40) + "\u2026" : firstLine;
         } else {
           pos = positionToString({ type: "page", page: currentPage });
@@ -41197,7 +41349,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
           const selLines = selPage?.lines ?? [];
           outer:
             for (let li = selection.paraStart;li <= Math.min(selection.paraEnd, selection.paraStart + 3); li++) {
-              const stripped = (selLines[li] ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+              const stripped = (selLines[li] ?? "").replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
               const re = /\S+/g;
               let m;
               while ((m = re.exec(stripped)) !== null) {
@@ -41212,7 +41364,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
           const curPage = pages[currentPage];
           if (curPage && curPage.lines.length > 0) {
             const firstLine = curPage.lines[0];
-            const stripped = firstLine.replace(/\x1b\[[0-9;]*m/g, "");
+            const stripped = firstLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
             const re = /\S+/g;
             const m = re.exec(stripped);
             if (m) {
@@ -41288,7 +41440,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
           const imageRegex = /\[Image (\d+)\]/;
           let foundImageId = null;
           for (const line of pageLines) {
-            const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+            const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
             const match = stripped.match(imageRegex);
             if (match) {
               foundImageId = match[1];
@@ -41336,6 +41488,24 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
           }
           const page = pages[targetPageIdx];
           const lines = page?.lines ?? [];
+          const ansiLineForLink = lines[lineIdx] ?? "";
+          const linkUrl = linkAtColumn(ansiLineForLink, adjustedCol);
+          if (linkUrl) {
+            if (linkUrl.startsWith("chapter:")) {
+              const chIdx = parseInt(linkUrl.slice(8), 10);
+              const targetPage = pages.findIndex((p) => p.chapterIndex === chIdx);
+              if (targetPage !== -1) {
+                currentPage = targetPage;
+                selection = null;
+                view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
+                view.render();
+              }
+            } else {
+              const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+              Bun.spawn([cmd, linkUrl], { stdout: "ignore", stderr: "ignore" });
+            }
+            continue;
+          }
           const groups = getParagraphGroups(lines);
           const para = groups.find((g) => lineIdx >= g.start && lineIdx <= g.end);
           if (para) {
@@ -41357,19 +41527,22 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 } else {
                   const found = findWordExact(w.text, allWords, targetPageIdx, lineIdx, w.start, pages);
                   const wordIdx = found?.index ?? null;
+                  const wip = getWordIndexInParagraph(pages, targetPageIdx, lineIdx, w.start, selection.paraStart);
                   selection = {
                     ...selection,
                     wordText: w.text,
                     wordIndex: wordIdx,
                     wordLine: lineIdx,
                     wordColStart: w.start,
-                    wordColEnd: w.end
+                    wordColEnd: w.end,
+                    wordIndexInPara: wip
                   };
                 }
               }
             } else {
               const chapterIdx = pages[targetPageIdx]?.chapterIndex;
               const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
+              const wc = countWordsInParagraph(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
                 paraStart: para.start,
@@ -41381,7 +41554,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 wordColEnd: null,
                 chapterIndex: chapterIdx,
                 paraIndexInChapter: paraIdx,
-                wordIndexInPara: null
+                wordIndexInPara: null,
+                wordCount: wc
               };
             }
           } else {
@@ -41398,7 +41572,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
               wordText: selection.wordText,
               wordIndex: selection.wordIndex,
               chapterIndex: selection.chapterIndex,
-              paraIndexInChapter: selection.paraIndexInChapter
+              paraIndexInChapter: selection.paraIndexInChapter,
+              wordIndexInPara: selection.wordIndexInPara
             } : null,
             isBookmarked: checkIsBookmarked(selection)
           });
