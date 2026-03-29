@@ -41013,6 +41013,8 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
           if (!para)
             para = { start: lineIdx, end: lineIdx };
           const wordIndexInPara = getWordIndexInParagraph(pages, pageIdx, lineIdx, m.index, para.start);
+          const chapterIndex2 = pages[pageIdx]?.chapterIndex ?? 0;
+          const paraIndexInChapter = getParaIndexInChapter(pages, pageIdx, para.start, para.end);
           return {
             pageIndex: pageIdx,
             paraStart: para.start,
@@ -41022,7 +41024,9 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
             wordLine: lineIdx,
             wordColStart: m.index,
             wordColEnd: m.index + m[0].length - 1,
-            wordIndexInPara
+            wordIndexInPara,
+            chapterIndex: chapterIndex2,
+            paraIndexInChapter
           };
         }
         wordCounter++;
@@ -41034,6 +41038,7 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
     estimatedPageIdx = Math.round(wordIdx / allWords.length * (pages.length - 1));
     estimatedPageIdx = Math.max(0, Math.min(estimatedPageIdx, pages.length - 1));
   }
+  const chapterIndex = pages[estimatedPageIdx]?.chapterIndex ?? 0;
   return {
     pageIndex: estimatedPageIdx,
     paraStart: 0,
@@ -41043,7 +41048,9 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
     wordLine: null,
     wordColStart: null,
     wordColEnd: null,
-    wordIndexInPara: null
+    wordIndexInPara: null,
+    chapterIndex,
+    paraIndexInChapter: 0
   };
 }
 async function runPageMode(content, options2, pages, startPage, switchMode, quit, allWords, _chunks, setCurrentWord, isResizePending, initialWordIndex = null, allWordsForSelection = allWords) {

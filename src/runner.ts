@@ -597,6 +597,8 @@ function createSelectionFromWordIndex(
           if (!para) para = { start: lineIdx, end: lineIdx };
 
           const wordIndexInPara = getWordIndexInParagraph(pages, pageIdx, lineIdx, m.index, para.start);
+          const chapterIndex = pages[pageIdx]?.chapterIndex ?? 0;
+          const paraIndexInChapter = getParaIndexInChapter(pages, pageIdx, para.start, para.end);
 
           return {
             pageIndex: pageIdx,
@@ -608,6 +610,8 @@ function createSelectionFromWordIndex(
             wordColStart: m.index,
             wordColEnd: m.index + m[0].length - 1,
             wordIndexInPara,
+            chapterIndex,
+            paraIndexInChapter,
           };
         }
         wordCounter++;
@@ -622,6 +626,7 @@ function createSelectionFromWordIndex(
     estimatedPageIdx = Math.max(0, Math.min(estimatedPageIdx, pages.length - 1));
   }
 
+  const chapterIndex = pages[estimatedPageIdx]?.chapterIndex ?? 0;
   return {
     pageIndex: estimatedPageIdx,
     paraStart: 0,
@@ -632,6 +637,8 @@ function createSelectionFromWordIndex(
     wordColStart: null,
     wordColEnd: null,
     wordIndexInPara: null,
+    chapterIndex,
+    paraIndexInChapter: 0,
   };
 }
 
