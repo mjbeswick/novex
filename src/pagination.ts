@@ -267,12 +267,10 @@ export function wrapHtml(html: string, width: number, theme: Theme = "dark", lin
         if (chIdx !== undefined) url = `chapter:${chIdx}`;
       }
 
-      // Wrap each word individually so styling survives word-wrapping
-      const words = plainTxt.split(/\s+/).filter(Boolean);
       if (url) {
-        return words.map(w => `\x1b]8;;${url}\x07${cs.link}${w}${ANSI_RESET}\x1b]8;;\x07`).join(" ");
+        return `\x1b]8;;${url}\x07${cs.link}${plainTxt}${ANSI_RESET}\x1b]8;;\x07`;
       }
-      return words.map(w => `${cs.link}${w}${ANSI_RESET}`).join(" ");
+      return `${cs.link}${plainTxt}${ANSI_RESET}`;
     }
   );
 
@@ -387,14 +385,60 @@ export function wrapHtml(html: string, width: number, theme: Theme = "dark", lin
 }
 
 /**
+ * Extract the active ANSI/OSC state at the end of a string.
+ * Returns { prefix, closeSeq } where prefix resumes the state on a new line
+ * and closeSeq properly closes any open state at the end of the current line.
+ */
+function getAnsiState(str: string): { prefix: string; closeSeq: string } {
+  const sgrStack: string[] = [];  // active SGR sequences since last reset
+  let osc8 = "";                  // active OSC 8 open sequence (empty = none)
+
+  let i = 0;
+  while (i < str.length) {
+    // CSI SGR: \x1b[...m
+    if (str.charCodeAt(i) === 0x1b && str[i + 1] === "[") {
+      const end = str.indexOf("m", i + 2);
+      if (end !== -1) {
+        const seq = str.slice(i, end + 1);
+        if (seq === "\x1b[0m" || seq === ANSI_RESET) {
+          sgrStack.length = 0;  // full reset clears all
+        } else {
+          sgrStack.push(seq);
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+    // OSC 8: \x1b]8;...BEL
+    if (str.charCodeAt(i) === 0x1b && str[i + 1] === "]" && str[i + 2] === "8" && str[i + 3] === ";") {
+      const bellIdx = str.indexOf("\x07", i + 4);
+      if (bellIdx !== -1) {
+        const payload = str.slice(i + 4, bellIdx);
+        const url = payload.startsWith(";") ? payload.slice(1) : payload;
+        osc8 = url ? str.slice(i, bellIdx + 1) : ""; // empty URL = link close
+        i = bellIdx + 1;
+        continue;
+      }
+    }
+    i++;
+  }
+
+  const hasState = sgrStack.length > 0 || osc8;
+  if (!hasState) return { prefix: "", closeSeq: "" };
+
+  const closeSeq = (sgrStack.length > 0 ? ANSI_RESET : "") + (osc8 ? "\x1b]8;;\x07" : "");
+  const prefix = osc8 + sgrStack.join("");
+  return { prefix, closeSeq };
+}
+
+/**
  * Wraps a single segment of text (which may contain ANSI codes) to fit within width.
  * ANSI codes are counted as zero-width for wrapping purposes.
+ * Carries active ANSI/OSC state across line breaks so styled spans are continuous.
  */
 function wrapSegment(text: string, width: number): string[] {
   if (width <= 0) width = 80;
 
-  // Split into "word tokens" — we need to handle ANSI codes embedded in words
-  // Simple approach: split on whitespace, treat each token as a unit
   const tokens = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let currentLine = "";
@@ -410,8 +454,10 @@ function wrapSegment(text: string, width: number): string[] {
       currentLine += " " + token;
       currentVisible += 1 + tokenVisible;
     } else {
-      lines.push(currentLine);
-      currentLine = token;
+      // Line is full — close active state and carry it to the next line
+      const { prefix, closeSeq } = getAnsiState(currentLine);
+      lines.push(currentLine + closeSeq);
+      currentLine = prefix + token;
       currentVisible = tokenVisible;
     }
   }
