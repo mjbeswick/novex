@@ -36028,15 +36028,6 @@ async function browseDirContent(rootDir, theme = "dark") {
     selectedIndex = 0;
   };
   await buildEntries();
-  const CURSOR_UP = "\x1B[A";
-  const CURSOR_DOWN = "\x1B[B";
-  const ENTER = "\r";
-  const ENTER_LF = `
-`;
-  const ESCAPE = "\x1B";
-  const CTRL_C = "\x03";
-  const BACKSPACE = "\x7F";
-  const BACKSPACE2 = "\b";
   const renderMenu = () => {
     const { rows, cols } = getTerminalSize();
     process.stdout.write("\x1B[2J\x1B[H");
@@ -36102,26 +36093,42 @@ async function browseDirContent(rootDir, theme = "dark") {
       process.stdout.write(t.dim + "\u2191\u2193 select  " + ANSI.reset + hotkeyLabel(t, "o", "open") + t.dim + "  " + ANSI.reset + hotkeyLabel(t, "/", "/ search") + t.dim + "  " + ANSI.reset + (canGoBack ? hotkeyLabel(t, "s", "esc back") + t.dim + "  " + ANSI.reset : "") + hotkeyLabel(t, "q", "quit"));
     }
   };
-  return new Promise((resolvePromise) => {
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.setEncoding("utf8");
+  enableRawMode();
+  enableMouseTracking();
+  try {
     renderMenu();
-    const cleanup = () => {
-      process.stdin.removeListener("data", onData);
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-    };
-    const onData = async (key) => {
+    while (true) {
+      const key = await readKey();
+      if (key.startsWith("mouse:")) {
+        const parts = key.split(":");
+        const row = parseInt(parts[1] ?? "0");
+        const { rows } = getTerminalSize();
+        const listStart = 3;
+        const maxVisible = rows - 4;
+        if (row >= listStart && row < listStart + maxVisible && entries.length > 0) {
+          let start = 0;
+          if (entries.length > maxVisible) {
+            start = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
+            if (start + maxVisible > entries.length)
+              start = entries.length - maxVisible;
+          }
+          const entryIdx = start + (row - listStart);
+          if (entryIdx < entries.length) {
+            selectedIndex = entryIdx;
+            renderMenu();
+          }
+        }
+        continue;
+      }
       if (searchMode) {
-        if (key === ESCAPE || key === CTRL_C) {
+        if (key === "escape") {
           searchMode = false;
           searchQuery = "";
           renderMenu();
-        } else if (key === BACKSPACE || key === BACKSPACE2) {
+        } else if (key === "backspace") {
           searchQuery = searchQuery.slice(0, -1);
           renderMenu();
-        } else if (key === ENTER || key === ENTER_LF) {
+        } else if (key === "enter") {
           searchMode = false;
           if (searchQuery.length > 0) {
             process.stdout.write(`\x1B[2J\x1B[H  Searching...
@@ -36134,15 +36141,15 @@ async function browseDirContent(rootDir, theme = "dark") {
           searchQuery += key;
           renderMenu();
         }
-        return;
+        continue;
       }
-      if (key === CURSOR_UP && entries.length > 0) {
+      if ((key === "up" || key === "k") && entries.length > 0) {
         selectedIndex = (selectedIndex - 1 + entries.length) % entries.length;
         renderMenu();
-      } else if (key === CURSOR_DOWN && entries.length > 0) {
+      } else if ((key === "down" || key === "j") && entries.length > 0) {
         selectedIndex = (selectedIndex + 1) % entries.length;
         renderMenu();
-      } else if ((key === ENTER || key === ENTER_LF) && entries.length > 0) {
+      } else if ((key === "enter" || key === "o") && entries.length > 0) {
         const entry = entries[selectedIndex];
         if (entry.type === "parent") {
           currentDir = dirname(currentDir);
@@ -36157,17 +36164,16 @@ async function browseDirContent(rootDir, theme = "dark") {
           await buildEntries();
           renderMenu();
         } else {
-          cleanup();
-          const selected = searchResults !== null ? resolve(rootDir, entry.relPath || entry.name) : resolve(currentDir, entry.name);
           process.stdout.write("\x1B[2J\x1B[H");
-          resolvePromise(selected);
+          const selected = searchResults !== null ? resolve(rootDir, entry.relPath || entry.name) : resolve(currentDir, entry.name);
+          return selected;
         }
       } else if (key === "/") {
         searchMode = true;
         searchQuery = "";
         searchResults = null;
         renderMenu();
-      } else if (key === ESCAPE) {
+      } else if (key === "escape") {
         if (searchResults !== null) {
           searchResults = null;
           searchQuery = "";
@@ -36178,15 +36184,13 @@ async function browseDirContent(rootDir, theme = "dark") {
           await buildEntries();
           renderMenu();
         } else {
-          cleanup();
           process.stdout.write("\x1B[2J\x1B[H");
-          resolvePromise(null);
+          return null;
         }
-      } else if (key === "c" || key === "q" || key === CTRL_C) {
-        cleanup();
+      } else if (key === "c" || key === "q") {
         process.stdout.write("\x1B[2J\x1B[H");
-        resolvePromise(null);
-      } else if (key === "-" || key === "h" || key === "\x1B[D") {
+        return null;
+      } else if (key === "-" || key === "h" || key === "left") {
         if (searchResults !== null) {
           searchResults = null;
           searchQuery = "";
@@ -36197,7 +36201,7 @@ async function browseDirContent(rootDir, theme = "dark") {
           await buildEntries();
           renderMenu();
         }
-      } else if ((key === "l" || key === "\x1B[C") && entries.length > 0) {
+      } else if ((key === "l" || key === "right") && entries.length > 0) {
         const entry = entries[selectedIndex];
         if (entry.type === "parent") {
           currentDir = dirname(currentDir);
@@ -36211,9 +36215,11 @@ async function browseDirContent(rootDir, theme = "dark") {
           renderMenu();
         }
       }
-    };
-    process.stdin.on("data", onData);
-  });
+    }
+  } finally {
+    disableMouseTracking();
+    disableRawMode();
+  }
 }
 
 // src/readers/index.ts
