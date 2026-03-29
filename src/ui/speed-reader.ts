@@ -224,17 +224,20 @@ export class SpeedReader {
   }
 
   private _buildFooterText(): string {
-    const { words, currentChunk, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const { words, currentChunk, theme, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const t = themes[theme];
 
     // Get current word text
     const chunk = words[currentChunk];
     const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
 
-    // Build hierarchical index
+    // Build hierarchical index with styling (matching page view - bright accent color, no brackets)
     let indexPath = "";
-    if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
+    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
       const wordIdx = wordIndexInPara ?? "?";
-      indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
+      // Format: escape dim → apply accent+bold → index → reset to dim → continue
+      const indexContent = `ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}`;
+      indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
     }
 
     // Show word with index, then shortcuts

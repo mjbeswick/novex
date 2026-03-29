@@ -39530,13 +39530,15 @@ class SpeedReader {
     return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}`;
   }
   _buildFooterText() {
-    const { words, currentChunk, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const { words, currentChunk, theme, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const t = themes[theme];
     const chunk = words[currentChunk];
     const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
     let indexPath = "";
-    if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
+    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
       const wordIdx = wordIndexInPara ?? "?";
-      indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
+      const indexContent = `ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}`;
+      indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
     }
     const wordInfo = currentWord ? `"${currentWord}"${indexPath}` : "";
     const shortcuts = `[space] pause  [\u2192][\u2190] skip  [\u2191][\u2193] sentence  [+][-] wpm  [[]]] chunk  [q] back`;
