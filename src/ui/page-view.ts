@@ -233,9 +233,11 @@ export class PageView {
     if (!selection) {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
+      hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = `Para selected · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 
     moveTo(rows - 1, 1);
@@ -388,9 +390,11 @@ export class PageView {
     if (!selection) {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
+      hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = `Para selected · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 
     const gutterBot = "─".repeat(Math.floor(GUTTER / 2)) + "┴" + "─".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
