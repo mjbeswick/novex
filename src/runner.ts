@@ -483,6 +483,49 @@ function getWordIndexInParagraph(
 }
 
 /**
+ * Calculate word index within a paragraph by finding paragraph boundaries in the word array.
+ * Returns 0-indexed position of the word within its paragraph.
+ */
+function getWordIndexInParaFromWords(
+  wordIdx: number,
+  allWords: ReturnType<typeof extractWords>,
+  pages: ReturnType<typeof buildPages>
+): number | null {
+  const word = allWords[wordIdx];
+  if (!word) return null;
+
+  // First, find which page and paragraph this word is in
+  const selection = createSelectionFromWordIndex(wordIdx, allWords, pages);
+  if (!selection) return null;
+
+  const targetPageIdx = selection.pageIndex;
+  const targetParaStart = selection.paraStart;
+
+  // Count words from paragraph start to this word
+  let wordCountInPara = 0;
+  for (let i = 0; i < allWords.length; i++) {
+    const w = allWords[i];
+    // Find which page and paragraph this word is on
+    const wSelection = createSelectionFromWordIndex(i, allWords, pages);
+    if (!wSelection) continue;
+
+    // If we're past the target paragraph, stop
+    if (wSelection.pageIndex > targetPageIdx ||
+        (wSelection.pageIndex === targetPageIdx && wSelection.paraStart > targetParaStart)) {
+      break;
+    }
+
+    // If we're in the target paragraph
+    if (wSelection.pageIndex === targetPageIdx && wSelection.paraStart === targetParaStart) {
+      if (i === wordIdx) return wordCountInPara;
+      wordCountInPara++;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get the hierarchical index info (chapter, paragraph, word) for a word at the given index.
  * Returns an object with chapterIndex, paraIndexInChapter, and wordIndexInPara.
  */
@@ -494,18 +537,17 @@ function getHierarchicalIndexForWord(
   const selection = createSelectionFromWordIndex(wordIdx, allWords, pages);
   if (!selection) return null;
 
-  // If we have the position info, we can return everything
-  if (selection.wordLine !== null) {
-    const chapterIndex = selection.chapterIndex ?? 0;
-    const paraIndexInChapter = selection.paraIndexInChapter ?? 0;
-    const wordIndexInPara = selection.wordIndexInPara ?? null;
-    return { chapterIndex, paraIndexInChapter, wordIndexInPara };
-  }
-
-  // Fallback: at least return chapter and paragraph info
   const chapterIndex = selection.chapterIndex ?? 0;
   const paraIndexInChapter = selection.paraIndexInChapter ?? 0;
-  return { chapterIndex, paraIndexInChapter, wordIndexInPara: null };
+
+  // Try to get word index in paragraph
+  let wordIndexInPara = selection.wordIndexInPara;
+  if (wordIndexInPara === null) {
+    // Fallback: calculate from word array boundaries
+    wordIndexInPara = getWordIndexInParaFromWords(wordIdx, allWords, pages);
+  }
+
+  return { chapterIndex, paraIndexInChapter, wordIndexInPara };
 }
 
 /**

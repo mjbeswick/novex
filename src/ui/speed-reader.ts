@@ -234,10 +234,9 @@ export class SpeedReader {
 
     // Build hierarchical index with styling (matching page view - bright accent color, no brackets)
     let indexPath = "";
-    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
-      // Use relative index if available, otherwise fall back to absolute index (matching page view)
-      // Word index is 1-indexed for display consistency with paragraph
-      const wordIdx = (wordIndexInPara ?? currentWordIndex) + 1;
+    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord && wordIndexInPara !== null) {
+      // Word index is 1-indexed for display consistency with paragraph (word within paragraph)
+      const wordIdx = wordIndexInPara + 1;
       // Format: escape dim → apply accent+bold → index → reset to dim → continue
       const indexContent = `ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}`;
       indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
