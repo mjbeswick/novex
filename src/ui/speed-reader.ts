@@ -224,13 +224,24 @@ export class SpeedReader {
   }
 
   private _buildFooterText(): string {
-    const { chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const { words, currentChunk, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+
+    // Get current word text
+    const chunk = words[currentChunk];
+    const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
+
+    // Build hierarchical index
     let indexPath = "";
     if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
       const wordIdx = wordIndexInPara ?? "?";
       indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
     }
-    return `[space] pause  [→][←] skip  [↑][↓] sentence  [+][-] wpm  [[]]] chunk  [q] back${indexPath}`;
+
+    // Show word with index, then shortcuts
+    const wordInfo = currentWord ? `"${currentWord}"${indexPath}` : "";
+    const shortcuts = `[space] pause  [→][←] skip  [↑][↓] sentence  [+][-] wpm  [[]]] chunk  [q] back`;
+
+    return wordInfo ? `${wordInfo} · ${shortcuts}` : shortcuts;
   }
 
   private _writeHeader(headerText: string, spritzRow: number, cols: number, t: ColorTheme): void {
