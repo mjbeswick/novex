@@ -333,9 +333,9 @@ export class PageView {
       let indexPath = "";
       const wordIdx = selection.wordIndexInPara ?? selection.wordIndex; // Use relative index if available
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx}]`;
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx + 1}]`;
       } else if (wordIdx !== null) {
-        indexPath = ` [word ${wordIdx}]`;
+        indexPath = ` [word ${wordIdx + 1}]`;
       }
       hintsText = `"${selection.wordText}"${indexPath} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
@@ -503,9 +503,9 @@ export class PageView {
       let indexPath = "";
       const wordIdx = selection.wordIndexInPara ?? selection.wordIndex; // Use relative index if available
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx}]`;
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx + 1}]`;
       } else if (wordIdx !== null) {
-        indexPath = ` [word ${wordIdx}]`;
+        indexPath = ` [word ${wordIdx + 1}]`;
       }
       hintsText = `"${selection.wordText}"${indexPath} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
