@@ -880,6 +880,8 @@ async function runPageMode(
                     wordColStart: w.start,
                     wordColEnd: w.end,
                   };
+                  // DEBUG: Print what word was selected
+                  process.stderr.write(`\n[DEBUG SELECT] Word selected: "${w.text}" at index ${found?.index ?? "??"} (page ${targetPageIdx}, line ${lineIdx})\n`);
                 }
               }
             } else {
@@ -894,6 +896,8 @@ async function runPageMode(
                 wordColStart: null,
                 wordColEnd: null,
               };
+              // DEBUG: Print what paragraph was selected
+              process.stderr.write(`\n[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}\n`);
             }
           } else {
             // Clicked outside any paragraph (blank line): deselect
