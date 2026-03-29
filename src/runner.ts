@@ -365,6 +365,8 @@ interface SelectionState {
   wordLine: number | null;
   wordColStart: number | null;
   wordColEnd: number | null;
+  chapterIndex?: number;
+  paraIndexInChapter?: number;
 }
 
 function getParagraphGroups(lines: string[]): {start: number, end: number}[] {
@@ -389,6 +391,40 @@ function wordAtColumn(ansiLine: string, col: number): {text: string, start: numb
     }
   }
   return null;
+}
+
+/**
+ * Calculate which paragraph number this is within its chapter (0-indexed).
+ */
+function getParaIndexInChapter(
+  pages: ReturnType<typeof buildPages>,
+  pageIdx: number,
+  paraStart: number,
+  paraEnd: number
+): number {
+  const chapterIdx = pages[pageIdx]?.chapterIndex ?? 0;
+  let paraCount = 0;
+
+  // Count paragraphs on all pages of this chapter up to and including this page
+  for (let i = 0; i <= pageIdx; i++) {
+    if (pages[i]?.chapterIndex !== chapterIdx) break;
+
+    const groups = getParagraphGroups(pages[i]?.lines ?? []);
+
+    // If this is the target page, count only up to our paragraph
+    if (i === pageIdx) {
+      for (const g of groups) {
+        if (g.start === paraStart && g.end === paraEnd) {
+          return paraCount;
+        }
+        paraCount++;
+      }
+      break;
+    } else {
+      paraCount += groups.length;
+    }
+  }
+  return 0;
 }
 
 /**
@@ -890,6 +926,8 @@ async function runPageMode(
               }
             } else {
               // First click or different paragraph: select paragraph
+              const chapterIdx = pages[targetPageIdx]?.chapterIndex;
+              const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
                 paraStart: para.start,
@@ -899,9 +937,11 @@ async function runPageMode(
                 wordLine: null,
                 wordColStart: null,
                 wordColEnd: null,
+                chapterIndex: chapterIdx,
+                paraIndexInChapter: paraIdx,
               };
               // DEBUG: Print what paragraph was selected
-              process.stderr.write(`\n[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}\n`);
+              process.stderr.write(`\n[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}\n`);
             }
           } else {
             // Clicked outside any paragraph (blank line): deselect
@@ -917,6 +957,8 @@ async function runPageMode(
               wordColEnd: selection.wordColEnd,
               wordText: selection.wordText,
               wordIndex: selection.wordIndex,
+              chapterIndex: selection.chapterIndex,
+              paraIndexInChapter: selection.paraIndexInChapter,
             } : null,
             isBookmarked: checkIsBookmarked(selection),
           });

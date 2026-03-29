@@ -12,6 +12,8 @@ export interface PageSelection {
   wordColEnd: number | null;
   wordText: string | null;
   wordIndex: number | null;   // index in allWords array
+  chapterIndex?: number;      // chapter index
+  paraIndexInChapter?: number; // paragraph index within the chapter
 }
 
 export interface PageViewState {
@@ -237,7 +239,12 @@ export class PageView {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
       hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      let paraInfo = "";
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
+        paraInfo = ` [ch ${selection.chapterIndex + 1}, para ${selection.paraIndexInChapter + 1}]`;
+      } else if (selection.pageIndex !== undefined) {
+        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+      }
       hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 
@@ -394,7 +401,12 @@ export class PageView {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
       hintsText = `"${selection.wordText}"${wordIdx} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      let paraInfo = "";
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
+        paraInfo = ` [ch ${selection.chapterIndex + 1}, para ${selection.paraIndexInChapter + 1}]`;
+      } else if (selection.pageIndex !== undefined) {
+        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+      }
       hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 

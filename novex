@@ -39094,7 +39094,12 @@ class PageView {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
       hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      let paraInfo = "";
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
+        paraInfo = ` [ch ${selection.chapterIndex + 1}, para ${selection.paraIndexInChapter + 1}]`;
+      } else if (selection.pageIndex !== undefined) {
+        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+      }
       hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
     moveTo(rows - 1, 1);
@@ -39197,7 +39202,12 @@ class PageView {
       const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
       hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      let paraInfo = "";
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
+        paraInfo = ` [ch ${selection.chapterIndex + 1}, para ${selection.paraIndexInChapter + 1}]`;
+      } else if (selection.pageIndex !== undefined) {
+        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+      }
       hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
     const gutterBot = "\u2500".repeat(Math.floor(GUTTER / 2)) + "\u2534" + "\u2500".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
@@ -40733,6 +40743,27 @@ function wordAtColumn(ansiLine, col) {
   }
   return null;
 }
+function getParaIndexInChapter(pages, pageIdx, paraStart, paraEnd) {
+  const chapterIdx = pages[pageIdx]?.chapterIndex ?? 0;
+  let paraCount = 0;
+  for (let i = 0;i <= pageIdx; i++) {
+    if (pages[i]?.chapterIndex !== chapterIdx)
+      break;
+    const groups = getParagraphGroups(pages[i]?.lines ?? []);
+    if (i === pageIdx) {
+      for (const g of groups) {
+        if (g.start === paraStart && g.end === paraEnd) {
+          return paraCount;
+        }
+        paraCount++;
+      }
+      break;
+    } else {
+      paraCount += groups.length;
+    }
+  }
+  return 0;
+}
 function findWordExact(text, allWords, targetPageIdx, targetLineIdx, targetCol, pages) {
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   const targetNorm = norm(text);
@@ -41154,6 +41185,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 }
               }
             } else {
+              const chapterIdx = pages[targetPageIdx]?.chapterIndex;
+              const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
                 paraStart: para.start,
@@ -41162,10 +41195,12 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 wordIndex: null,
                 wordLine: null,
                 wordColStart: null,
-                wordColEnd: null
+                wordColEnd: null,
+                chapterIndex: chapterIdx,
+                paraIndexInChapter: paraIdx
               };
               process.stderr.write(`
-[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}
+[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}
 `);
             }
           } else {
@@ -41180,7 +41215,9 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
               wordColStart: selection.wordColStart,
               wordColEnd: selection.wordColEnd,
               wordText: selection.wordText,
-              wordIndex: selection.wordIndex
+              wordIndex: selection.wordIndex,
+              chapterIndex: selection.chapterIndex,
+              paraIndexInChapter: selection.paraIndexInChapter
             } : null,
             isBookmarked: checkIsBookmarked(selection)
           });
