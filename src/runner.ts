@@ -391,21 +391,54 @@ function wordAtColumn(ansiLine: string, col: number): {text: string, start: numb
   return null;
 }
 
-function findWordApprox(
+/**
+ * Find the exact word index by tracking word position through pages.
+ * No approximation - we count words sequentially until we reach the target page/line/col.
+ */
+function findWordExact(
   text: string,
   allWords: ReturnType<typeof extractWords>,
-  currentPage: number,
-  totalPages: number
+  targetPageIdx: number,
+  targetLineIdx: number,
+  targetCol: number,
+  pages: ReturnType<typeof buildPages>
 ): ReturnType<typeof extractWords>[number] | null {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const n = norm(text);
-  if (!n) return null;
-  const approx = Math.round(currentPage / Math.max(totalPages - 1, 1) * (allWords.length - 1));
-  const win = Math.max(200, Math.round(allWords.length / Math.max(totalPages, 1)) * 3);
-  const lo = Math.max(0, approx - win);
-  const hi = Math.min(allWords.length - 1, approx + win);
-  for (let i = approx; i <= hi; i++) if (norm(allWords[i]!.text) === n) return allWords[i]!;
-  for (let i = approx - 1; i >= lo; i--) if (norm(allWords[i]!.text) === n) return allWords[i]!;
+  const targetNorm = norm(text);
+  if (!targetNorm) return null;
+
+  // Scan pages sequentially, tracking word index, until we reach target position
+  let wordIdx = 0;
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
+    // Stop if we've passed the target page
+    if (pageIdx > targetPageIdx) break;
+
+    const page = pages[pageIdx];
+    const lines = page?.lines ?? [];
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      // If we're past target line on target page, stop
+      if (pageIdx === targetPageIdx && lineIdx > targetLineIdx) break;
+
+      const ansiLine = lines[lineIdx];
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const re = /\S+/g;
+      let m: RegExpExecArray | null;
+
+      while ((m = re.exec(stripped)) !== null) {
+        // Check if we're at the target position
+        if (pageIdx === targetPageIdx && lineIdx === targetLineIdx &&
+            targetCol >= m.index && targetCol < m.index + m[0].length) {
+          // Found the clicked word - match it to allWords by position
+          if (wordIdx < allWords.length) {
+            return allWords[wordIdx]!;
+          }
+        }
+        wordIdx++;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -421,9 +454,17 @@ function createSelectionFromWordIndex(
   const word = allWords[wordIdx];
   if (!word) return null;
 
+  // DEBUG: Log what we're trying to find
+  const isDebug = false; // Set to true to see debug output
+  if (isDebug) {
+    process.stderr.write(`\n[DEBUG] Trying to restore word index ${wordIdx}: "${word.text}"\n`);
+    process.stderr.write(`[DEBUG] Total allWords: ${allWords.length}\n`);
+  }
+
   // Scan all pages sequentially, counting words until we reach wordIdx
   // This approach doesn't rely on text matching - just position
   let wordCounter = 0;
+  let totalWordsOnPages = 0;
 
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
     const page = pages[pageIdx];
@@ -437,10 +478,16 @@ function createSelectionFromWordIndex(
       let m: RegExpExecArray | null;
 
       while ((m = re.exec(stripped)) !== null) {
+        totalWordsOnPages++;
+
         // If this is the word we're looking for (by position), select it
         if (wordCounter === wordIdx) {
           let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
           if (!para) para = { start: lineIdx, end: lineIdx };
+
+          if (isDebug) {
+            process.stderr.write(`[DEBUG] Found at position ${wordCounter}: "${m[0]}" on page ${pageIdx}, line ${lineIdx}\n`);
+          }
 
           return {
             pageIndex: pageIdx,
@@ -456,6 +503,10 @@ function createSelectionFromWordIndex(
         wordCounter++;
       }
     }
+  }
+
+  if (isDebug) {
+    process.stderr.write(`[DEBUG] FAILED: Only found ${totalWordsOnPages} words on pages, but looking for index ${wordIdx}\n`);
   }
 
   // Fallback: estimate page by word distribution
@@ -817,7 +868,7 @@ async function runPageMode(
                     wordColEnd: null,
                   };
                 } else {
-                  const found = findWordApprox(w.text, allWords, targetPageIdx, pages.length);
+                  const found = findWordExact(w.text, allWords, targetPageIdx, lineIdx, w.start, pages);
                   selection = {
                     ...selection!,
                     wordText: w.text,
