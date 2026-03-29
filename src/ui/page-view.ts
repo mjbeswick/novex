@@ -122,10 +122,15 @@ function highlightWord(line: string, colStart: number, colEnd: number): string {
  * (e.g. "[n]ext" → "next" with n highlighted); symbol/multi-char keys get a
  * space separator (e.g. "[c]lear" → "esc clear").
  */
-function formatHints(text: string, t: ColorTheme): string {
+function formatHints(text: string, t: ColorTheme, hoveredKey?: string): string {
   return text.replace(/\[([^\]]+)\](\w*)/g, (_m, key: string, rest: string) => {
     const sep = (key.length === 1 && /[a-zA-Z]/.test(key)) ? "" : (rest ? " " : "");
-    return `${ANSI.reset}${t.accent}${ANSI.bold}${key}${ANSI.reset}${t.dim}${sep}${rest}`;
+    // Apply hover styling (underline) if this key is hovered
+    const isHovered = hoveredKey && key === hoveredKey;
+    const keyStyle = isHovered
+      ? `${ANSI.reset}${t.accent}${ANSI.bold}${ANSI.underline}`
+      : `${ANSI.reset}${t.accent}${ANSI.bold}`;
+    return `${keyStyle}${key}${ANSI.reset}${t.dim}${sep}${rest}`;
   });
 }
 
@@ -164,6 +169,7 @@ function extractShortcutsFromHints(text: string): Array<{key: string; startCol: 
 export class PageView {
   private state: PageViewState;
   private lastHints: string = ""; // Cache last hints string for click detection
+  private hoveredShortcut: string | null = null; // Currently hovered shortcut key
 
   constructor(state: PageViewState) {
     this.state = { ...state };
@@ -193,6 +199,45 @@ export class PageView {
       }
     }
     return null;
+  }
+
+  /**
+   * Get the shortcut key at a hover position and update hover state.
+   * Returns true if the hover state changed (requiring a re-render).
+   */
+  updateHoverState(row: number, col: number): boolean {
+    const { rows } = getTerminalSize();
+    if (row !== rows) {
+      // Not hovering over footer
+      if (this.hoveredShortcut !== null) {
+        this.hoveredShortcut = null;
+        return true;
+      }
+      return false;
+    }
+
+    const shortcuts = extractShortcutsFromHints(this.lastHints);
+    for (const shortcut of shortcuts) {
+      if (col >= shortcut.startCol && col <= shortcut.endCol) {
+        if (this.hoveredShortcut !== shortcut.key) {
+          this.hoveredShortcut = shortcut.key;
+          return true;
+        }
+        return false;
+      }
+    }
+
+    // Not hovering over any shortcut
+    if (this.hoveredShortcut !== null) {
+      this.hoveredShortcut = null;
+      return true;
+    }
+    return false;
+  }
+
+  /** Get the currently hovered shortcut key, if any. */
+  getHoveredShortcut(): string | null {
+    return this.hoveredShortcut;
   }
 
   render(): void {
@@ -302,7 +347,7 @@ export class PageView {
     process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
     moveTo(rows, 1);
     process.stdout.write(
-      t.dim + formatHints(hintsText, t) + ANSI.reset
+      t.dim + formatHints(hintsText, t, this.hoveredShortcut ?? undefined) + ANSI.reset
     );
   }
 
@@ -467,7 +512,7 @@ export class PageView {
     process.stdout.write(t.border + "─".repeat(colWidth) + gutterBot + "─".repeat(colWidth) + ANSI.reset);
     moveTo(rows, 1);
     process.stdout.write(
-      t.dim + formatHints(hintsText, t) + ANSI.reset
+      t.dim + formatHints(hintsText, t, this.hoveredShortcut ?? undefined) + ANSI.reset
     );
   }
 
@@ -509,6 +554,18 @@ export class PageView {
       }
 
       return { type: "click", row, col };
+    }
+
+    if (key.startsWith("hover:")) {
+      const parts = key.split(":");
+      const row = parseInt(parts[1] ?? "0");
+      const col = parseInt(parts[2] ?? "0");
+
+      // Update hover state - if changed, return special marker for re-render
+      if (this.updateHoverState(row, col)) {
+        return "command"; // Trigger re-render without action
+      }
+      return null; // No change, no need to render
     }
     switch (key) {
       case "n":

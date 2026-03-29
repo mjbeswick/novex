@@ -1998,6 +1998,8 @@ function decodeKey(raw) {
         const press = m[4] === "M";
         if (press && btn === 0)
           return `mouse:${row}:${col}`;
+        if (!press && btn === 0)
+          return `hover:${row}:${col}`;
         return "_ignore";
       }
     }
@@ -39012,10 +39014,12 @@ function highlightWord(line, colStart, colEnd) {
     result += ANSI.reset;
   return result;
 }
-function formatHints(text, t) {
+function formatHints(text, t, hoveredKey) {
   return text.replace(/\[([^\]]+)\](\w*)/g, (_m, key, rest) => {
     const sep = key.length === 1 && /[a-zA-Z]/.test(key) ? "" : rest ? " " : "";
-    return `${ANSI.reset}${t.accent}${ANSI.bold}${key}${ANSI.reset}${t.dim}${sep}${rest}`;
+    const isHovered = hoveredKey && key === hoveredKey;
+    const keyStyle = isHovered ? `${ANSI.reset}${t.accent}${ANSI.bold}${ANSI.underline}` : `${ANSI.reset}${t.accent}${ANSI.bold}`;
+    return `${keyStyle}${key}${ANSI.reset}${t.dim}${sep}${rest}`;
   });
 }
 function extractShortcutsFromHints(text) {
@@ -39042,6 +39046,7 @@ function extractShortcutsFromHints(text) {
 class PageView {
   state;
   lastHints = "";
+  hoveredShortcut = null;
   constructor(state) {
     this.state = { ...state };
   }
@@ -39062,6 +39067,34 @@ class PageView {
       }
     }
     return null;
+  }
+  updateHoverState(row, col) {
+    const { rows } = getTerminalSize();
+    if (row !== rows) {
+      if (this.hoveredShortcut !== null) {
+        this.hoveredShortcut = null;
+        return true;
+      }
+      return false;
+    }
+    const shortcuts = extractShortcutsFromHints(this.lastHints);
+    for (const shortcut of shortcuts) {
+      if (col >= shortcut.startCol && col <= shortcut.endCol) {
+        if (this.hoveredShortcut !== shortcut.key) {
+          this.hoveredShortcut = shortcut.key;
+          return true;
+        }
+        return false;
+      }
+    }
+    if (this.hoveredShortcut !== null) {
+      this.hoveredShortcut = null;
+      return true;
+    }
+    return false;
+  }
+  getHoveredShortcut() {
+    return this.hoveredShortcut;
   }
   render() {
     const { cols, rows } = getTerminalSize();
@@ -39139,7 +39172,7 @@ class PageView {
     moveTo(rows - 1, 1);
     process.stdout.write(t.border + "\u2500".repeat(cols) + ANSI.reset);
     moveTo(rows, 1);
-    process.stdout.write(t.dim + formatHints(hintsText, t) + ANSI.reset);
+    process.stdout.write(t.dim + formatHints(hintsText, t, this.hoveredShortcut ?? undefined) + ANSI.reset);
   }
   renderSpread(cols, rows) {
     const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
@@ -39249,7 +39282,7 @@ class PageView {
     moveTo(rows - 1, 1);
     process.stdout.write(t.border + "\u2500".repeat(colWidth) + gutterBot + "\u2500".repeat(colWidth) + ANSI.reset);
     moveTo(rows, 1);
-    process.stdout.write(t.dim + formatHints(hintsText, t) + ANSI.reset);
+    process.stdout.write(t.dim + formatHints(hintsText, t, this.hoveredShortcut ?? undefined) + ANSI.reset);
   }
   getChapterTitle(_pageIdx) {
     return this.state.chapterTitle;
@@ -39264,6 +39297,15 @@ class PageView {
         return this.handleKey(shortcutKey);
       }
       return { type: "click", row, col };
+    }
+    if (key.startsWith("hover:")) {
+      const parts = key.split(":");
+      const row = parseInt(parts[1] ?? "0");
+      const col = parseInt(parts[2] ?? "0");
+      if (this.updateHoverState(row, col)) {
+        return "command";
+      }
+      return null;
     }
     switch (key) {
       case "n":

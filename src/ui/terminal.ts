@@ -192,6 +192,8 @@ function decodeKey(raw: string): string {
         const row = parseInt(m[3]);
         const press = m[4] === "M";
         if (press && btn === 0) return `mouse:${row}:${col}`;
+        // Also handle mouse movement for hover effects (button 0 with 'm' = no button pressed)
+        if (!press && btn === 0) return `hover:${row}:${col}`;
         return "_ignore";
       }
     }
