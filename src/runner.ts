@@ -457,8 +457,9 @@ function createSelectionFromWordIndex(
   // DEBUG: Log what we're trying to find
   const isDebug = false; // Set to true to see debug output
   if (isDebug) {
-    process.stderr.write(`\n[DEBUG] Trying to restore word index ${wordIdx}: "${word.text}"\n`);
+    process.stderr.write(`\n[DEBUG createSelection] Restoring to word index ${wordIdx}: "${word.text}"\n`);
     process.stderr.write(`[DEBUG] Total allWords: ${allWords.length}\n`);
+    process.stderr.write(`[DEBUG] allWords[${wordIdx}] = "${allWords[wordIdx]?.text}"\n`);
   }
 
   // Scan all pages sequentially, counting words until we reach wordIdx
@@ -1072,7 +1073,10 @@ async function runSpeedMode(
 
   const getCurrentWordIndex = (): number => {
     const chunk = chunks[currentChunk];
-    return chunk && chunk.length > 0 ? chunk[0].index : 0;
+    const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
+    // DEBUG: Uncomment to see what word index is returned when quitting
+    // process.stderr.write(`\n[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}\n`);
+    return wordIdx;
   };
 
   const syncTts = () => {
