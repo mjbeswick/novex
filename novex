@@ -40826,12 +40826,21 @@ function wordAtColumn(ansiLine, col) {
   return null;
 }
 function getParaIndexInChapter(pages, pageIdx, paraStart, paraEnd) {
-  const chapterIdx = pages[pageIdx]?.chapterIndex ?? 0;
+  const targetChapter = pages[pageIdx]?.chapterIndex ?? 0;
   let paraCount = 0;
-  for (let i = 0;i <= pageIdx; i++) {
-    if (pages[i]?.chapterIndex !== chapterIdx)
+  let chapterStartPage = pageIdx;
+  for (let i = pageIdx - 1;i >= 0; i--) {
+    if (pages[i]?.chapterIndex === targetChapter) {
+      chapterStartPage = i;
+    } else {
       break;
-    const groups = getParagraphGroups(pages[i]?.lines ?? []);
+    }
+  }
+  for (let i = chapterStartPage;i <= pageIdx; i++) {
+    const page = pages[i];
+    if (!page || page.chapterIndex !== targetChapter)
+      break;
+    const groups = getParagraphGroups(page.lines ?? []);
     if (i === pageIdx) {
       for (const g of groups) {
         if (g.start === paraStart && g.end === paraEnd) {
@@ -40839,7 +40848,7 @@ function getParaIndexInChapter(pages, pageIdx, paraStart, paraEnd) {
         }
         paraCount++;
       }
-      break;
+      return 0;
     } else {
       paraCount += groups.length;
     }
@@ -41268,6 +41277,9 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
               }
             } else {
               const chapterIdx = pages[targetPageIdx]?.chapterIndex;
+              process.stderr.write(`
+[DEBUG SELECT] About to call getParaIndexInChapter with pageIdx=${targetPageIdx}, para=${para.start}-${para.end}, chapter=${chapterIdx}
+`);
               const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
@@ -41281,8 +41293,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 chapterIndex: chapterIdx,
                 paraIndexInChapter: paraIdx
               };
-              process.stderr.write(`
-[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}
+              process.stderr.write(`[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}
 `);
             }
           } else {

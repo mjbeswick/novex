@@ -402,14 +402,25 @@ function getParaIndexInChapter(
   paraStart: number,
   paraEnd: number
 ): number {
-  const chapterIdx = pages[pageIdx]?.chapterIndex ?? 0;
+  const targetChapter = pages[pageIdx]?.chapterIndex ?? 0;
   let paraCount = 0;
 
-  // Count paragraphs on all pages of this chapter up to and including this page
-  for (let i = 0; i <= pageIdx; i++) {
-    if (pages[i]?.chapterIndex !== chapterIdx) break;
+  // Find the first page of this chapter
+  let chapterStartPage = pageIdx;
+  for (let i = pageIdx - 1; i >= 0; i--) {
+    if (pages[i]?.chapterIndex === targetChapter) {
+      chapterStartPage = i;
+    } else {
+      break;
+    }
+  }
 
-    const groups = getParagraphGroups(pages[i]?.lines ?? []);
+  // Count paragraphs from chapter start up to and including target page
+  for (let i = chapterStartPage; i <= pageIdx; i++) {
+    const page = pages[i];
+    if (!page || page.chapterIndex !== targetChapter) break;
+
+    const groups = getParagraphGroups(page.lines ?? []);
 
     // If this is the target page, count only up to our paragraph
     if (i === pageIdx) {
@@ -419,8 +430,10 @@ function getParaIndexInChapter(
         }
         paraCount++;
       }
-      break;
+      // Paragraph not found on target page
+      return 0;
     } else {
+      // Count all paragraphs on previous pages of this chapter
       paraCount += groups.length;
     }
   }
@@ -927,6 +940,7 @@ async function runPageMode(
             } else {
               // First click or different paragraph: select paragraph
               const chapterIdx = pages[targetPageIdx]?.chapterIndex;
+              process.stderr.write(`\n[DEBUG SELECT] About to call getParaIndexInChapter with pageIdx=${targetPageIdx}, para=${para.start}-${para.end}, chapter=${chapterIdx}\n`);
               const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
@@ -941,7 +955,7 @@ async function runPageMode(
                 paraIndexInChapter: paraIdx,
               };
               // DEBUG: Print what paragraph was selected
-              process.stderr.write(`\n[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}\n`);
+              process.stderr.write(`[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}\n`);
             }
           } else {
             // Clicked outside any paragraph (blank line): deselect
