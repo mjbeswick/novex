@@ -1,5 +1,5 @@
 import type { FileState, Theme } from "../types";
-import { ANSI, clearScreen, getTerminalSize, moveTo, readKey } from "./terminal";
+import { ANSI, clearScreen, getTerminalSize, moveTo, readKey, enableMouseTracking, disableMouseTracking } from "./terminal";
 import { themes } from "./themes";
 
 function formatDate(iso: string): string {
@@ -193,12 +193,43 @@ export async function showBooksList(
     }
   }
 
+  enableMouseTracking();
   render();
 
-  while (true) {
-    const key = await readKey();
+  try {
+    while (true) {
+      const key = await readKey();
 
-    if (key === "escape" || key === "q" || key === "c") return null;
+    // Handle mouse clicks
+    if (key.startsWith("mouse:")) {
+      const parts = key.split(":");
+      const row = parseInt(parts[1] ?? "0");
+      const { rows } = getTerminalSize();
+      const listStart = 4;
+      const maxVisible = Math.max(1, rows - 6);
+
+      // Check if click is on a book item (rows 4 to 4+maxVisible-1)
+      if (row >= listStart && row < listStart + maxVisible && items.length > 0) {
+        const scrollOffset = Math.max(
+          0,
+          Math.min(selected - Math.floor(maxVisible / 2), items.length - maxVisible)
+        );
+        const itemIdx = scrollOffset + (row - listStart);
+        if (itemIdx < items.length) {
+          selected = itemIdx;
+          // Double-click behavior: if clicking on already selected item, open it
+          render();
+          continue;
+        }
+      }
+      // Ignore clicks elsewhere
+      continue;
+    }
+
+    if (key === "escape" || key === "q" || key === "c") {
+      disableMouseTracking();
+      return null;
+    }
 
     if (key === "b" && onBrowse) {
       await onBrowse();
@@ -215,6 +246,7 @@ export async function showBooksList(
       selected = Math.min(items.length - 1, selected + 1);
       render();
     } else if (key === "enter" || key === "o") {
+      disableMouseTracking();
       return items[selected]?.hash ?? null;
     } else if (key === "f") {
       const item = items[selected];
@@ -225,5 +257,8 @@ export async function showBooksList(
         render();
       }
     }
+    }
+  } finally {
+    disableMouseTracking();
   }
 }

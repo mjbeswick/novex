@@ -39971,35 +39971,60 @@ async function showBooksList(books, theme, onDelete, onBrowse) {
       process.stdout.write((onBrowse ? hotkeyLabel3(t, "b", "browse") + t.dim + `  ` + ANSI.reset : "") + hotkeyLabel3(t, "q", "quit"));
     }
   }
+  enableMouseTracking();
   render();
-  while (true) {
-    const key = await readKey();
-    if (key === "escape" || key === "q" || key === "c")
-      return null;
-    if (key === "b" && onBrowse) {
-      await onBrowse();
-      render();
-      continue;
-    }
-    if (items.length === 0)
-      continue;
-    if (key === "up" || key === "k") {
-      selected = Math.max(0, selected - 1);
-      render();
-    } else if (key === "down" || key === "j") {
-      selected = Math.min(items.length - 1, selected + 1);
-      render();
-    } else if (key === "enter" || key === "o") {
-      return items[selected]?.hash ?? null;
-    } else if (key === "f") {
-      const item = items[selected];
-      if (item) {
-        await onDelete(item.hash);
-        items.splice(selected, 1);
-        selected = Math.max(0, Math.min(selected, items.length - 1));
+  try {
+    while (true) {
+      const key = await readKey();
+      if (key.startsWith("mouse:")) {
+        const parts = key.split(":");
+        const row = parseInt(parts[1] ?? "0");
+        const { rows } = getTerminalSize();
+        const listStart = 4;
+        const maxVisible = Math.max(1, rows - 6);
+        if (row >= listStart && row < listStart + maxVisible && items.length > 0) {
+          const scrollOffset = Math.max(0, Math.min(selected - Math.floor(maxVisible / 2), items.length - maxVisible));
+          const itemIdx = scrollOffset + (row - listStart);
+          if (itemIdx < items.length) {
+            selected = itemIdx;
+            render();
+            continue;
+          }
+        }
+        continue;
+      }
+      if (key === "escape" || key === "q" || key === "c") {
+        disableMouseTracking();
+        return null;
+      }
+      if (key === "b" && onBrowse) {
+        await onBrowse();
         render();
+        continue;
+      }
+      if (items.length === 0)
+        continue;
+      if (key === "up" || key === "k") {
+        selected = Math.max(0, selected - 1);
+        render();
+      } else if (key === "down" || key === "j") {
+        selected = Math.min(items.length - 1, selected + 1);
+        render();
+      } else if (key === "enter" || key === "o") {
+        disableMouseTracking();
+        return items[selected]?.hash ?? null;
+      } else if (key === "f") {
+        const item = items[selected];
+        if (item) {
+          await onDelete(item.hash);
+          items.splice(selected, 1);
+          selected = Math.max(0, Math.min(selected, items.length - 1));
+          render();
+        }
       }
     }
+  } finally {
+    disableMouseTracking();
   }
 }
 // src/ui/toc-view.ts
