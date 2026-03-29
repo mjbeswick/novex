@@ -455,7 +455,7 @@ function createSelectionFromWordIndex(
   if (!word) return null;
 
   // DEBUG: Log what we're trying to find
-  const isDebug = false; // Set to true to see debug output
+  const isDebug = true; // Set to true to see debug output
   if (isDebug) {
     process.stderr.write(`\n[DEBUG createSelection] Restoring to word index ${wordIdx}: "${word.text}"\n`);
     process.stderr.write(`[DEBUG] Total allWords: ${allWords.length}\n`);
@@ -1075,7 +1075,7 @@ async function runSpeedMode(
     const chunk = chunks[currentChunk];
     const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
     // DEBUG: Uncomment to see what word index is returned when quitting
-    // process.stderr.write(`\n[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}\n`);
+    process.stderr.write(`\n[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}\n`);
     return wordIdx;
   };
 
