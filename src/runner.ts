@@ -396,6 +396,38 @@ function wordAtColumn(ansiLine: string, col: number): {text: string, start: numb
 }
 
 /**
+ * Check if a visible column position falls inside an OSC 8 hyperlink.
+ * Returns the URL if found, null otherwise.
+ */
+function linkAtColumn(ansiLine: string, col: number): string | null {
+  let visible = 0;
+  let currentUrl: string | null = null;
+  let i = 0;
+  while (i < ansiLine.length) {
+    // CSI SGR sequence — skip
+    if (ansiLine.charCodeAt(i) === 0x1b && ansiLine[i + 1] === "[") {
+      const end = ansiLine.indexOf("m", i + 2);
+      if (end !== -1) { i = end + 1; continue; }
+    }
+    // OSC 8 hyperlink open/close
+    if (ansiLine.charCodeAt(i) === 0x1b && ansiLine[i + 1] === "]" && ansiLine[i + 2] === "8" && ansiLine[i + 3] === ";") {
+      const bellIdx = ansiLine.indexOf("\x07", i + 4);
+      if (bellIdx !== -1) {
+        const payload = ansiLine.slice(i + 4, bellIdx); // ";URL"
+        const url = payload.startsWith(";") ? payload.slice(1) : payload;
+        currentUrl = url || null; // empty URL = link close
+        i = bellIdx + 1;
+        continue;
+      }
+    }
+    if (visible === col) return currentUrl;
+    visible++;
+    i++;
+  }
+  return null;
+}
+
+/**
  * Calculate which paragraph number this is within its chapter (0-indexed).
  */
 function getParaIndexInChapter(
@@ -1001,6 +1033,17 @@ async function runPageMode(
 
           const page = pages[targetPageIdx];
           const lines = page?.lines ?? [];
+
+          // Check if the click is on a hyperlink — open it instead of selecting
+          const ansiLineForLink = lines[lineIdx] ?? "";
+          const linkUrl = linkAtColumn(ansiLineForLink, adjustedCol);
+          if (linkUrl) {
+            const cmd = process.platform === "darwin" ? "open"
+              : process.platform === "win32" ? "start" : "xdg-open";
+            Bun.spawn([cmd, linkUrl], { stdout: "ignore", stderr: "ignore" });
+            continue;
+          }
+
           const groups = getParagraphGroups(lines);
           const para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
           if (para) {
