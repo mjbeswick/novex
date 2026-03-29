@@ -518,43 +518,67 @@ function getWordIndexInParagraph(
  * Calculate word index within a paragraph by finding paragraph boundaries in the word array.
  * Returns 0-indexed position of the word within its paragraph.
  */
-function getWordIndexInParaFromWords(
-  wordIdx: number,
-  allWords: ReturnType<typeof extractWords>,
-  pages: ReturnType<typeof buildPages>
+/**
+ * Calculate word index within a paragraph by counting words on the page lines
+ * from paraStart to paraEnd. Much faster than the old O(n²) approach — only
+ * scans the lines of the target paragraph.
+ */
+function getWordIndexInParaFromPage(
+  pages: ReturnType<typeof buildPages>,
+  pageIdx: number,
+  paraStart: number,
+  paraEnd: number,
+  targetWordCounter: number
 ): number | null {
-  const word = allWords[wordIdx];
-  if (!word) return null;
+  const page = pages[pageIdx];
+  if (!page) return null;
 
-  // First, find which page and paragraph this word is in
-  const selection = createSelectionFromWordIndex(wordIdx, allWords, pages);
-  if (!selection) return null;
-
-  const targetPageIdx = selection.pageIndex;
-  const targetParaStart = selection.paraStart;
-
-  // Count words from paragraph start to this word
-  let wordCountInPara = 0;
-  for (let i = 0; i < allWords.length; i++) {
-    const w = allWords[i];
-    // Find which page and paragraph this word is on
-    const wSelection = createSelectionFromWordIndex(i, allWords, pages);
-    if (!wSelection) continue;
-
-    // If we're past the target paragraph, stop
-    if (wSelection.pageIndex > targetPageIdx ||
-        (wSelection.pageIndex === targetPageIdx && wSelection.paraStart > targetParaStart)) {
-      break;
-    }
-
-    // If we're in the target paragraph
-    if (wSelection.pageIndex === targetPageIdx && wSelection.paraStart === targetParaStart) {
-      if (i === wordIdx) return wordCountInPara;
-      wordCountInPara++;
+  let wordCount = 0;
+  // Count words sequentially on previous pages to know our starting counter
+  let counter = 0;
+  for (let pi = 0; pi < pageIdx; pi++) {
+    const p = pages[pi];
+    for (const line of (p?.lines ?? [])) {
+      const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
+      const re = /\S+/g;
+      while (re.exec(stripped)) counter++;
     }
   }
-
+  // Now count words on this page up through the paragraph
+  for (let li = 0; li < (page.lines?.length ?? 0); li++) {
+    const line = page.lines?.[li] ?? "";
+    const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
+    const re = /\S+/g;
+    while (re.exec(stripped)) {
+      if (li >= paraStart && li <= paraEnd) {
+        if (counter === targetWordCounter) return wordCount;
+        wordCount++;
+      }
+      counter++;
+    }
+  }
   return null;
+}
+
+/**
+ * Count the total number of words in a paragraph (paraStart..paraEnd) on a page.
+ */
+function countWordsInParagraph(
+  pages: ReturnType<typeof buildPages>,
+  pageIdx: number,
+  paraStart: number,
+  paraEnd: number
+): number {
+  const page = pages[pageIdx];
+  if (!page) return 0;
+  let count = 0;
+  for (let li = paraStart; li <= paraEnd; li++) {
+    const line = page.lines?.[li] ?? "";
+    const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
+    const re = /\S+/g;
+    while (re.exec(stripped)) count++;
+  }
+  return count;
 }
 
 /**
@@ -574,9 +598,11 @@ function getHierarchicalIndexForWord(
 
   // Try to get word index in paragraph
   let wordIndexInPara = selection.wordIndexInPara;
-  if (wordIndexInPara === null) {
-    // Fallback: calculate from word array boundaries
-    wordIndexInPara = getWordIndexInParaFromWords(wordIdx, allWords, pages);
+  if (wordIndexInPara === null || wordIndexInPara === undefined) {
+    // Fallback: count words on the paragraph lines directly
+    wordIndexInPara = getWordIndexInParaFromPage(
+      pages, selection.pageIndex, selection.paraStart, selection.paraEnd, wordIdx
+    );
   }
 
   return { chapterIndex, paraIndexInChapter, wordIndexInPara };
@@ -1098,6 +1124,7 @@ async function runPageMode(
               // First click or different paragraph: select paragraph
               const chapterIdx = pages[targetPageIdx]?.chapterIndex;
               const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
+              const wc = countWordsInParagraph(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
                 paraStart: para.start,
@@ -1110,6 +1137,7 @@ async function runPageMode(
                 chapterIndex: chapterIdx,
                 paraIndexInChapter: paraIdx,
                 wordIndexInPara: null,
+                wordCount: wc,
               };
             }
           } else {

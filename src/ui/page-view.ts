@@ -15,6 +15,7 @@ export interface PageSelection {
   wordIndexInPara: number | null; // index within current paragraph
   chapterIndex?: number;      // chapter index
   paraIndexInChapter?: number; // paragraph index within the chapter
+  wordCount?: number;         // total words in selected paragraph
 }
 
 export interface PageViewState {
@@ -345,21 +346,21 @@ export class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       let indexPath = "";
-      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex; // Use relative index if available
+      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex;
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx + 1}]`;
+        indexPath = ` §${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}.${wordIdx + 1}`;
       } else if (wordIdx !== null) {
-        indexPath = ` [word ${wordIdx + 1}]`;
+        indexPath = ` #${wordIdx + 1}`;
       }
       hintsText = `"${selection.wordText}"${indexPath} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}]`;
-      } else if (selection.pageIndex !== undefined) {
-        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+        const wc = selection.wordCount;
+        const wcLabel = wc ? ` (${wc} words)` : "";
+        paraInfo = ` §${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}${wcLabel}`;
       }
-      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
+      hintsText = `Para${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
 
     this.lastHints = hintsText; // Cache for click detection
@@ -515,21 +516,21 @@ export class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       let indexPath = "";
-      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex; // Use relative index if available
+      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex;
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx + 1}]`;
+        indexPath = ` §${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}.${wordIdx + 1}`;
       } else if (wordIdx !== null) {
-        indexPath = ` [word ${wordIdx + 1}]`;
+        indexPath = ` #${wordIdx + 1}`;
       }
       hintsText = `"${selection.wordText}"${indexPath} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}]`;
-      } else if (selection.pageIndex !== undefined) {
-        paraInfo = ` [page ${selection.pageIndex + 1}]`;
+        const wc = selection.wordCount;
+        const wcLabel = wc ? ` (${wc} words)` : "";
+        paraInfo = ` §${selection.chapterIndex + 1}.${selection.paraIndexInChapter + 1}${wcLabel}`;
       }
-      hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
+      hintsText = `Para${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     }
 
     this.lastHints = hintsText; // Cache for click detection

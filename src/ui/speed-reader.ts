@@ -232,13 +232,13 @@ export class SpeedReader {
     const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
     const currentWordIndex = chunk && chunk.length > 0 ? chunk[0].index : 0;
 
-    // Build hierarchical index with styling (matching page view - bright accent color, no brackets)
+    // Build compact hierarchical index: §chapter.paragraph.word (all 1-based)
     let indexPath = "";
-    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord && wordIndexInPara !== null) {
-      // Word index is 1-indexed for display consistency with paragraph (word within paragraph)
-      const wordIdx = wordIndexInPara + 1;
-      // Format: escape dim → apply accent+bold → index → reset to dim → continue
-      const indexContent = `ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}`;
+    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
+      let indexContent = `§${chapterIndex + 1}.${paraIndexInChapter + 1}`;
+      if (wordIndexInPara !== null && wordIndexInPara !== undefined) {
+        indexContent += `.${wordIndexInPara + 1}`;
+      }
       indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
     }
 
