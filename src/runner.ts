@@ -368,7 +368,8 @@ interface SelectionState {
   wordColEnd: number | null;
   chapterIndex?: number;
   paraIndexInChapter?: number;
-  wordIndexInPara?: number | null;  // index within current paragraph
+  wordIndexInPara: number | null;  // index within current paragraph
+  wordCount?: number;              // total words in selected paragraph
 }
 
 function getParagraphGroups(lines: string[]): {start: number, end: number}[] {
@@ -1110,6 +1111,7 @@ async function runPageMode(
                 } else {
                   const found = findWordExact(w.text, allWords, targetPageIdx, lineIdx, w.start, pages);
                   const wordIdx = found?.index ?? null;
+                  const wip = getWordIndexInParagraph(pages, targetPageIdx, lineIdx, w.start, selection!.paraStart);
                   selection = {
                     ...selection!,
                     wordText: w.text,
@@ -1117,6 +1119,7 @@ async function runPageMode(
                     wordLine: lineIdx,
                     wordColStart: w.start,
                     wordColEnd: w.end,
+                    wordIndexInPara: wip,
                   };
                 }
               }
@@ -1156,6 +1159,7 @@ async function runPageMode(
               wordIndex: selection.wordIndex,
               chapterIndex: selection.chapterIndex,
               paraIndexInChapter: selection.paraIndexInChapter,
+              wordIndexInPara: selection.wordIndexInPara,
             } : null,
             isBookmarked: checkIsBookmarked(selection),
           });
