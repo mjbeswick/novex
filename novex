@@ -39157,12 +39157,17 @@ class PageView {
     if (!selection) {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
-      const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
-      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
+      let indexPath = "";
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && selection.wordIndex !== null) {
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${selection.wordIndex}]`;
+      } else if (selection.wordIndex !== null) {
+        indexPath = ` [word ${selection.wordIndex}]`;
+      }
+      hintsText = `"${selection.wordText}"${indexPath} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex}, para ${selection.paraIndexInChapter + 1}]`;
+        paraInfo = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}]`;
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
@@ -39266,12 +39271,17 @@ class PageView {
     if (!selection) {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
-      const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
-      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
+      let indexPath = "";
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && selection.wordIndex !== null) {
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${selection.wordIndex}]`;
+      } else if (selection.wordIndex !== null) {
+        indexPath = ` [word ${selection.wordIndex}]`;
+      }
+      hintsText = `"${selection.wordText}"${indexPath} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex}, para ${selection.paraIndexInChapter + 1}]`;
+        paraInfo = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}]`;
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
