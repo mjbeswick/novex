@@ -11,6 +11,7 @@ export interface PageSelection {
   wordColStart: number | null;
   wordColEnd: number | null;
   wordText: string | null;
+  wordIndex: number | null;   // index in allWords array
 }
 
 export interface PageViewState {

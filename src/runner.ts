@@ -872,16 +872,20 @@ async function runPageMode(
                   };
                 } else {
                   const found = findWordExact(w.text, allWords, targetPageIdx, lineIdx, w.start, pages);
+                  const wordIdx = found?.index ?? null;
                   selection = {
                     ...selection!,
                     wordText: w.text,
-                    wordIndex: found?.index ?? null,
+                    wordIndex: wordIdx,
                     wordLine: lineIdx,
                     wordColStart: w.start,
                     wordColEnd: w.end,
                   };
                   // DEBUG: Print what word was selected
-                  process.stderr.write(`\n[DEBUG SELECT] Word selected: "${w.text}" at index ${found?.index ?? "??"} (page ${targetPageIdx}, line ${lineIdx})\n`);
+                  process.stderr.write(`\n[DEBUG SELECT] Word selected: "${w.text}" at index ${wordIdx ?? "NOT FOUND"} (page ${targetPageIdx}, line ${lineIdx})\n`);
+                  if (!found) {
+                    process.stderr.write(`[DEBUG] findWordExact returned null for word "${w.text}"\n`);
+                  }
                 }
               }
             } else {
@@ -912,6 +916,7 @@ async function runPageMode(
               wordColStart: selection.wordColStart,
               wordColEnd: selection.wordColEnd,
               wordText: selection.wordText,
+              wordIndex: selection.wordIndex,
             } : null,
             isBookmarked: checkIsBookmarked(selection),
           });

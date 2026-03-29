@@ -1844,9 +1844,11 @@ var require_commander = __commonJS((exports, module) => {
 // src/ui/terminal.ts
 var exports_terminal = {};
 __export(exports_terminal, {
+  signalResize: () => signalResize,
   showCursor: () => showCursor,
   readKey: () => readKey,
   moveTo: () => moveTo,
+  isResizeSignaled: () => isResizeSignaled,
   hideCursor: () => hideCursor,
   getTerminalSize: () => getTerminalSize,
   exitAltScreen: () => exitAltScreen,
@@ -1856,6 +1858,7 @@ __export(exports_terminal, {
   disableRawMode: () => disableRawMode,
   disableMouseTracking: () => disableMouseTracking,
   clearScreen: () => clearScreen,
+  clearResizeSignal: () => clearResizeSignal,
   clearLine: () => clearLine,
   ANSI: () => ANSI
 });
@@ -1904,16 +1907,37 @@ function disableRawMode() {
   }
   process.stdin.pause();
 }
+function signalResize() {
+  resizeSignaled = true;
+}
+function isResizeSignaled() {
+  return resizeSignaled;
+}
+function clearResizeSignal() {
+  resizeSignaled = false;
+}
 async function readKey() {
   while (true) {
     const key = await readOnce();
+    if (key === "_resize") {
+      clearResizeSignal();
+      return "_resize";
+    }
     if (key !== "_ignore")
       return key;
   }
 }
 async function readOnce() {
   return new Promise((resolve, _reject) => {
+    const checkResize = setInterval(() => {
+      if (resizeSignaled) {
+        clearInterval(checkResize);
+        process.stdin.removeAllListeners("data");
+        resolve("_resize");
+      }
+    }, 50);
     const onData = (data) => {
+      clearInterval(checkResize);
       process.stdin.removeListener("data", onData);
       const raw = typeof data === "string" ? data : data.toString("binary");
       if (raw === "\x03") {
@@ -1997,7 +2021,7 @@ function decodeKey(raw) {
   }
   return `unknown(${Buffer.from(raw, "binary").toString("hex")})`;
 }
-var ANSI;
+var ANSI, resizeSignaled = false;
 var init_terminal = __esm(() => {
   ANSI = {
     reset: "\x1B[0m",
@@ -39067,9 +39091,11 @@ class PageView {
     if (!selection) {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
+      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = `Para selected \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
     moveTo(rows - 1, 1);
     process.stdout.write(t.border + "\u2500".repeat(cols) + ANSI.reset);
@@ -39168,9 +39194,11 @@ class PageView {
     if (!selection) {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
-      hintsText = `"${selection.wordText}" \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const wordIdx = selection.wordIndex !== null ? ` [#${selection.wordIndex}]` : "";
+      hintsText = `"${selection.wordText}"${wordIdx} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     } else {
-      hintsText = `Para selected \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
+      const paraInfo = selection.pageIndex !== undefined ? ` [page ${selection.pageIndex + 1}]` : "";
+      hintsText = `Para selected${paraInfo} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
     const gutterBot = "\u2500".repeat(Math.floor(GUTTER / 2)) + "\u2534" + "\u2500".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
     moveTo(rows - 1, 1);
@@ -40476,14 +40504,27 @@ async function raceTickKey(ms) {
       if (settled)
         return;
       settled = true;
+      clearInterval(resizeCheck);
       process.stdin.removeListener("data", onData);
       resolve2({ type: "tick" });
     }, ms);
+    const resizeCheck = setInterval(() => {
+      if (settled)
+        return;
+      if (isResizeSignaled()) {
+        settled = true;
+        clearTimeout(timer);
+        clearInterval(resizeCheck);
+        process.stdin.removeAllListeners("data");
+        resolve2({ type: "resize" });
+      }
+    }, 50);
     const onData = (data) => {
       if (settled)
         return;
       settled = true;
       clearTimeout(timer);
+      clearInterval(resizeCheck);
       process.stdin.removeListener("data", onData);
       const raw = typeof data === "string" ? data : data.toString("binary");
       if (raw === "\x03") {
@@ -40582,10 +40623,11 @@ async function runSession(content, options2, initialPosition) {
   const words = extractWords(content.text);
   const chunks = chunkWords(words, options2.chunk);
   let resizePending = false;
-  const onResize = () => {
+  const onSigwinch = () => {
     resizePending = true;
+    signalResize();
   };
-  process.stdout.on("resize", onResize);
+  process.on("SIGWINCH", onSigwinch);
   let startPage = 0;
   let startWord = 0;
   let startScroll = 0;
@@ -40612,6 +40654,7 @@ async function runSession(content, options2, initialPosition) {
     while (running) {
       if (resizePending) {
         resizePending = false;
+        clearResizeSignal();
         ({ cols, rows } = getTerminalSize());
         pages = buildPages(content, contentCols(cols), rows, options2.lineWidth, options2.theme);
         allLines = pages.flatMap((p) => p.lines);
@@ -40657,7 +40700,7 @@ async function runSession(content, options2, initialPosition) {
       await updateLastPosition(content.hash, positionToString(finalPos), content.source, content.title, pages.length).catch(() => {});
     }
   } finally {
-    process.stdout.off("resize", onResize);
+    process.off("SIGWINCH", onSigwinch);
     showCursor();
     disableRawMode();
     exitAltScreen();
@@ -40690,36 +40733,53 @@ function wordAtColumn(ansiLine, col) {
   }
   return null;
 }
-function findWordApprox(text, allWords, currentPage, totalPages) {
+function findWordExact(text, allWords, targetPageIdx, targetLineIdx, targetCol, pages) {
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const n = norm(text);
-  if (!n)
+  const targetNorm = norm(text);
+  if (!targetNorm)
     return null;
-  const approx = Math.round(currentPage / Math.max(totalPages - 1, 1) * (allWords.length - 1));
-  const win = Math.max(200, Math.round(allWords.length / Math.max(totalPages, 1)) * 3);
-  const lo = Math.max(0, approx - win);
-  const hi = Math.min(allWords.length - 1, approx + win);
-  for (let i = approx;i <= hi; i++)
-    if (norm(allWords[i].text) === n)
-      return allWords[i];
-  for (let i = approx - 1;i >= lo; i--)
-    if (norm(allWords[i].text) === n)
-      return allWords[i];
+  let wordIdx = 0;
+  for (let pageIdx = 0;pageIdx < pages.length; pageIdx++) {
+    if (pageIdx > targetPageIdx)
+      break;
+    const page = pages[pageIdx];
+    const lines = page?.lines ?? [];
+    for (let lineIdx = 0;lineIdx < lines.length; lineIdx++) {
+      if (pageIdx === targetPageIdx && lineIdx > targetLineIdx)
+        break;
+      const ansiLine = lines[lineIdx];
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const re = /\S+/g;
+      let m;
+      while ((m = re.exec(stripped)) !== null) {
+        if (pageIdx === targetPageIdx && lineIdx === targetLineIdx && targetCol >= m.index && targetCol < m.index + m[0].length) {
+          if (wordIdx < allWords.length) {
+            return allWords[wordIdx];
+          }
+        }
+        wordIdx++;
+      }
+    }
+  }
   return null;
 }
 function createSelectionFromWordIndex(wordIdx, allWords, pages) {
   const word = allWords[wordIdx];
   if (!word)
     return null;
-  let targetPageIdx = 0;
-  if (pages.length > 1) {
-    targetPageIdx = Math.round(wordIdx / allWords.length * (pages.length - 1));
-    targetPageIdx = Math.max(0, Math.min(targetPageIdx, pages.length - 1));
+  const isDebug = true;
+  if (isDebug) {
+    process.stderr.write(`
+[DEBUG createSelection] Restoring to word index ${wordIdx}: "${word.text}"
+`);
+    process.stderr.write(`[DEBUG] Total allWords: ${allWords.length}
+`);
+    process.stderr.write(`[DEBUG] allWords[${wordIdx}] = "${allWords[wordIdx]?.text}"
+`);
   }
-  for (let offset = 0;offset < pages.length; offset++) {
-    const pageIdx = targetPageIdx + (offset % 2 === 0 ? offset / 2 : -Math.ceil(offset / 2));
-    if (pageIdx < 0 || pageIdx >= pages.length)
-      continue;
+  let wordCounter = 0;
+  let totalWordsOnPages = 0;
+  for (let pageIdx = 0;pageIdx < pages.length; pageIdx++) {
     const page = pages[pageIdx];
     const lines = page?.lines ?? [];
     const groups = getParagraphGroups(lines);
@@ -40729,26 +40789,41 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
       const re = /\S+/g;
       let m;
       while ((m = re.exec(stripped)) !== null) {
-        if (m[0].toLowerCase() === word.text.toLowerCase()) {
+        totalWordsOnPages++;
+        if (wordCounter === wordIdx) {
           let para = groups.find((g) => lineIdx >= g.start && lineIdx <= g.end);
           if (!para)
             para = { start: lineIdx, end: lineIdx };
+          if (isDebug) {
+            process.stderr.write(`[DEBUG] Found at position ${wordCounter}: "${m[0]}" on page ${pageIdx}, line ${lineIdx}
+`);
+          }
           return {
             pageIndex: pageIdx,
             paraStart: para.start,
             paraEnd: para.end,
-            wordText: word.text,
+            wordText: m[0],
             wordIndex: wordIdx,
             wordLine: lineIdx,
             wordColStart: m.index,
             wordColEnd: m.index + m[0].length - 1
           };
         }
+        wordCounter++;
       }
     }
   }
+  if (isDebug) {
+    process.stderr.write(`[DEBUG] FAILED: Only found ${totalWordsOnPages} words on pages, but looking for index ${wordIdx}
+`);
+  }
+  let estimatedPageIdx = 0;
+  if (pages.length > 1) {
+    estimatedPageIdx = Math.round(wordIdx / allWords.length * (pages.length - 1));
+    estimatedPageIdx = Math.max(0, Math.min(estimatedPageIdx, pages.length - 1));
+  }
   return {
-    pageIndex: targetPageIdx,
+    pageIndex: estimatedPageIdx,
     paraStart: 0,
     paraEnd: 0,
     wordText: word.text,
@@ -40843,6 +40918,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
       if (isResizePending())
         return currentPage;
       const key = await readKey();
+      if (key === "_resize")
+        return currentPage;
       const action = view.handleKey(key);
       if (action === "next") {
         const step = getTerminalSize().cols >= SPREAD_MIN_COLS ? 2 : 1;
@@ -40903,7 +40980,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
               const re = /\S+/g;
               let m;
               while ((m = re.exec(stripped)) !== null) {
-                const found = findWordApprox(m[0], allWords, selection.pageIndex, pages.length);
+                const found = findWordExact(m[0], allWords, selection.pageIndex, li, m.index, pages);
                 if (found) {
                   setCurrentWord(found.index);
                   break outer;
@@ -40918,7 +40995,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
             const re = /\S+/g;
             const m = re.exec(stripped);
             if (m) {
-              const found = findWordApprox(m[0], allWords, currentPage, pages.length);
+              const found = findWordExact(m[0], allWords, currentPage, 0, m.index, pages);
               if (found)
                 setCurrentWord(found.index);
             }
@@ -41057,15 +41134,23 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                     wordColEnd: null
                   };
                 } else {
-                  const found = findWordApprox(w.text, allWords, targetPageIdx, pages.length);
+                  const found = findWordExact(w.text, allWords, targetPageIdx, lineIdx, w.start, pages);
+                  const wordIdx = found?.index ?? null;
                   selection = {
                     ...selection,
                     wordText: w.text,
-                    wordIndex: found?.index ?? null,
+                    wordIndex: wordIdx,
                     wordLine: lineIdx,
                     wordColStart: w.start,
                     wordColEnd: w.end
                   };
+                  process.stderr.write(`
+[DEBUG SELECT] Word selected: "${w.text}" at index ${wordIdx ?? "NOT FOUND"} (page ${targetPageIdx}, line ${lineIdx})
+`);
+                  if (!found) {
+                    process.stderr.write(`[DEBUG] findWordExact returned null for word "${w.text}"
+`);
+                  }
                 }
               }
             } else {
@@ -41079,6 +41164,9 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 wordColStart: null,
                 wordColEnd: null
               };
+              process.stderr.write(`
+[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}
+`);
             }
           } else {
             selection = null;
@@ -41091,7 +41179,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
               wordLine: selection.wordLine,
               wordColStart: selection.wordColStart,
               wordColEnd: selection.wordColEnd,
-              wordText: selection.wordText
+              wordText: selection.wordText,
+              wordIndex: selection.wordIndex
             } : null,
             isBookmarked: checkIsBookmarked(selection)
           });
@@ -41122,6 +41211,8 @@ async function runScrollMode(content, options2, allLines, startOffset, switchMod
     if (isResizePending())
       return offset;
     const key = await readKey();
+    if (key === "_resize")
+      return offset;
     const action = view.handleKey(key);
     const { rows: currentRows } = getTerminalSize();
     const currentContentRows = Math.max(1, currentRows - 3);
@@ -41219,7 +41310,11 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
   view.render();
   const getCurrentWordIndex = () => {
     const chunk = chunks[currentChunk];
-    return chunk && chunk.length > 0 ? chunk[0].index : 0;
+    const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
+    process.stderr.write(`
+[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}
+`);
+    return wordIdx;
   };
   const syncTts = () => {
     if (!tts)
@@ -41235,6 +41330,8 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       break;
     if (paused) {
       const key = await readKey();
+      if (key === "_resize")
+        break;
       const action = view.handleKey(key);
       if (!handleSpeedAction(action))
         break;
@@ -41256,6 +41353,8 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
           view.updateState({ paused });
           view.render();
         }
+      } else if (result.type === "resize") {
+        break;
       } else {
         const action = view.handleKey(result.key);
         if (!handleSpeedAction(action))
