@@ -692,7 +692,7 @@ async function runPageMode(
           // Word is selected: start from selected word
           setCurrentWord(selection.wordIndex);
         } else if (selection != null) {
-          // Paragraph selected: scan lines of the para for the first matchable word.
+          // Paragraph selected: find the first word in that paragraph.
           // Use selection.pageIndex (not currentPage) so spread-mode right-page works.
           const selPage = pages[selection.pageIndex];
           const selLines = selPage?.lines ?? [];
@@ -701,7 +701,8 @@ async function runPageMode(
             const re = /\S+/g;
             let m: RegExpExecArray | null;
             while ((m = re.exec(stripped)) !== null) {
-              const found = findWordApprox(m[0], allWords, selection.pageIndex, pages.length);
+              // Use exact position to find the word
+              const found = findWordExact(m[0], allWords, selection.pageIndex, li, m.index, pages);
               if (found) { setCurrentWord(found.index); break outer; }
             }
           }
@@ -714,7 +715,8 @@ async function runPageMode(
             const re = /\S+/g;
             const m = re.exec(stripped);
             if (m) {
-              const found = findWordApprox(m[0], allWords, currentPage, pages.length);
+              // Use exact position to find the first word of the page
+              const found = findWordExact(m[0], allWords, currentPage, 0, m.index, pages);
               if (found) setCurrentWord(found.index);
             }
           }
