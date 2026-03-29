@@ -129,10 +129,41 @@ function formatHints(text: string, t: ColorTheme): string {
   });
 }
 
+/**
+ * Extract shortcuts and their positions from the raw hints text.
+ * Returns array of {key, startCol, endCol} where columns are 1-indexed.
+ */
+function extractShortcutsFromHints(text: string): Array<{key: string; startCol: number; endCol: number}> {
+  const shortcuts: Array<{key: string; startCol: number; endCol: number}> = [];
+  let col = 1; // 1-indexed column position
+  const re = /\[([^\]]+)\](\w*)/g;
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(text)) !== null) {
+    const key = m[1];
+    const rest = m[2] ?? "";
+    const keyStartCol = col;
+    const keyEndCol = keyStartCol + key.length - 1;
+
+    shortcuts.push({
+      key,
+      startCol: keyStartCol,
+      endCol: keyEndCol,
+    });
+
+    // Move column forward: key + optional separator + rest
+    const sep = (key.length === 1 && /[a-zA-Z]/.test(key)) ? "" : (rest ? " " : "");
+    col += key.length + sep.length + rest.length;
+  }
+
+  return shortcuts;
+}
+
 // ── PageView ───────────────────────────────────────────────────────────────────
 
 export class PageView {
   private state: PageViewState;
+  private lastHints: string = ""; // Cache last hints string for click detection
 
   constructor(state: PageViewState) {
     this.state = { ...state };
@@ -145,6 +176,23 @@ export class PageView {
   /** Returns true when the current terminal is wide enough for spread layout. */
   isSpread(): boolean {
     return getTerminalSize().cols >= SPREAD_MIN_COLS;
+  }
+
+  /**
+   * Check if a footer click matches a shortcut and return the key.
+   * Row should be the footer row (bottom row), col should be 1-indexed.
+   */
+  getKeyFromFooterClick(row: number, col: number): string | null {
+    const { rows } = getTerminalSize();
+    if (row !== rows) return null; // Footer is at bottom row
+
+    const shortcuts = extractShortcutsFromHints(this.lastHints);
+    for (const shortcut of shortcuts) {
+      if (col >= shortcut.startCol && col <= shortcut.endCol) {
+        return shortcut.key;
+      }
+    }
+    return null;
   }
 
   render(): void {
@@ -247,6 +295,8 @@ export class PageView {
       }
       hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
+
+    this.lastHints = hintsText; // Cache for click detection
 
     moveTo(rows - 1, 1);
     process.stdout.write(t.border + "─".repeat(cols) + ANSI.reset);
@@ -410,6 +460,8 @@ export class PageView {
       hintsText = `Para selected${paraInfo} · [s]peed ${bmLabel} [B]marks [t]ts [esc]clear`;
     }
 
+    this.lastHints = hintsText; // Cache for click detection
+
     const gutterBot = "─".repeat(Math.floor(GUTTER / 2)) + "┴" + "─".repeat(GUTTER - Math.floor(GUTTER / 2) - 1);
     moveTo(rows - 1, 1);
     process.stdout.write(t.border + "─".repeat(colWidth) + gutterBot + "─".repeat(colWidth) + ANSI.reset);
@@ -449,6 +501,13 @@ export class PageView {
       const parts = key.split(":");
       const row = parseInt(parts[1] ?? "0");
       const col = parseInt(parts[2] ?? "0");
+
+      // Check if click is on a footer shortcut
+      const shortcutKey = this.getKeyFromFooterClick(row, col);
+      if (shortcutKey) {
+        return this.handleKey(shortcutKey);
+      }
+
       return { type: "click", row, col };
     }
     switch (key) {
