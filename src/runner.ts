@@ -571,13 +571,6 @@ function createSelectionFromWordIndex(
   const word = allWords[wordIdx];
   if (!word) return null;
 
-  // DEBUG: Log what we're trying to find
-  const isDebug = true; // Set to true to see debug output
-  if (isDebug) {
-    process.stderr.write(`\n[DEBUG createSelection] Restoring to word index ${wordIdx}: "${word.text}"\n`);
-    process.stderr.write(`[DEBUG] Total allWords: ${allWords.length}\n`);
-    process.stderr.write(`[DEBUG] allWords[${wordIdx}] = "${allWords[wordIdx]?.text}"\n`);
-  }
 
   // Scan all pages sequentially, counting words until we reach wordIdx
   // This approach doesn't rely on text matching - just position
@@ -603,10 +596,6 @@ function createSelectionFromWordIndex(
           let para = groups.find(g => lineIdx >= g.start && lineIdx <= g.end);
           if (!para) para = { start: lineIdx, end: lineIdx };
 
-          if (isDebug) {
-            process.stderr.write(`[DEBUG] Found at position ${wordCounter}: "${m[0]}" on page ${pageIdx}, line ${lineIdx}\n`);
-          }
-
           const wordIndexInPara = getWordIndexInParagraph(pages, pageIdx, lineIdx, m.index, para.start);
 
           return {
@@ -624,10 +613,6 @@ function createSelectionFromWordIndex(
         wordCounter++;
       }
     }
-  }
-
-  if (isDebug) {
-    process.stderr.write(`[DEBUG] FAILED: Only found ${totalWordsOnPages} words on pages, but looking for index ${wordIdx}\n`);
   }
 
   // Fallback: estimate page by word distribution
@@ -1002,17 +987,11 @@ async function runPageMode(
                     wordColStart: w.start,
                     wordColEnd: w.end,
                   };
-                  // DEBUG: Print what word was selected
-                  process.stderr.write(`\n[DEBUG SELECT] Word selected: "${w.text}" at index ${wordIdx ?? "NOT FOUND"} (page ${targetPageIdx}, line ${lineIdx})\n`);
-                  if (!found) {
-                    process.stderr.write(`[DEBUG] findWordExact returned null for word "${w.text}"\n`);
-                  }
                 }
               }
             } else {
               // First click or different paragraph: select paragraph
               const chapterIdx = pages[targetPageIdx]?.chapterIndex;
-              process.stderr.write(`\n[DEBUG SELECT] About to call getParaIndexInChapter with pageIdx=${targetPageIdx}, para=${para.start}-${para.end}, chapter=${chapterIdx}\n`);
               const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
@@ -1027,8 +1006,6 @@ async function runPageMode(
                 paraIndexInChapter: paraIdx,
                 wordIndexInPara: null,
               };
-              // DEBUG: Print what paragraph was selected
-              process.stderr.write(`[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}\n`);
             }
           } else {
             // Clicked outside any paragraph (blank line): deselect
@@ -1200,8 +1177,6 @@ async function runSpeedMode(
   const getCurrentWordIndex = (): number => {
     const chunk = chunks[currentChunk];
     const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
-    // DEBUG: Uncomment to see what word index is returned when quitting
-    process.stderr.write(`\n[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}\n`);
     return wordIdx;
   };
 

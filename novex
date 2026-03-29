@@ -39482,6 +39482,7 @@ class SpeedReader {
   initialized = false;
   lastSentenceText = "";
   lastHeaderText = "";
+  lastFooterText = "";
   lastHighlightLine = -1;
   lastSize = { cols: 0, rows: 0 };
   constructor(state) {
@@ -39494,6 +39495,7 @@ class SpeedReader {
     this.initialized = false;
     this.lastSentenceText = "";
     this.lastHeaderText = "";
+    this.lastFooterText = "";
     this.lastHighlightLine = -1;
     this.lastSize = { cols: 0, rows: 0 };
   }
@@ -39523,14 +39525,18 @@ class SpeedReader {
     }
   }
   _buildHeaderText(progress) {
-    const { wpm, chunkSize, paused, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const { wpm, chunkSize, paused } = this.state;
     const ttsFlag = this.state.tts ? "  \uD83D\uDD0A" : "";
+    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}`;
+  }
+  _buildFooterText() {
+    const { chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
     let indexPath = "";
     if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
       const wordIdx = wordIndexInPara ?? "?";
       indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
     }
-    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}${indexPath}`;
+    return `[space] pause  [\u2192][\u2190] skip  [\u2191][\u2193] sentence  [+][-] wpm  [[]]] chunk  [q] back${indexPath}`;
   }
   _writeHeader(headerText, spritzRow, cols, t) {
     if (headerText === this.lastHeaderText)
@@ -39538,6 +39544,13 @@ class SpeedReader {
     this.lastHeaderText = headerText;
     moveTo(spritzRow - 2, 1);
     process.stdout.write(t.dim + centerPad(headerText, cols) + ANSI.reset);
+  }
+  _writeFooter(footerText, rows, cols, t) {
+    if (footerText === this.lastFooterText)
+      return;
+    this.lastFooterText = footerText;
+    moveTo(rows - 2, 1);
+    process.stdout.write(t.dim + centerPad(footerText, cols) + ANSI.reset);
   }
   _layout(cols, rows) {
     const spritzRow = Math.max(6, Math.floor(rows * 0.35));
@@ -39580,8 +39593,7 @@ class SpeedReader {
     process.stdout.write(makeBorder("\u2534"));
     moveTo(spritzRow + 4, 1);
     process.stdout.write(tickLine);
-    moveTo(rows - 2, 1);
-    process.stdout.write(t.dim + centerPad("[space] pause  [\u2192][\u2190] skip  [\u2191][\u2193] sentence  [+][-] wpm  [[]]] chunk  [q] back", cols) + ANSI.reset);
+    this._writeFooter(this._buildFooterText(), rows, cols, t);
   }
   _partialRender(cols, rows) {
     const { theme, words, currentChunk, text, allWords } = this.state;
@@ -39595,6 +39607,7 @@ class SpeedReader {
     moveTo(spritzRow + 2, 1);
     process.stdout.write(this._buildWordLine(word, orp, wordStart, t, cols));
     this._writeHeader(this._buildHeaderText(this.getProgress()), spritzRow, cols, t);
+    this._writeFooter(this._buildFooterText(), rows, cols, t);
   }
   handleKey(key) {
     switch (key) {
@@ -40976,16 +40989,6 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
   const word = allWords[wordIdx];
   if (!word)
     return null;
-  const isDebug = true;
-  if (isDebug) {
-    process.stderr.write(`
-[DEBUG createSelection] Restoring to word index ${wordIdx}: "${word.text}"
-`);
-    process.stderr.write(`[DEBUG] Total allWords: ${allWords.length}
-`);
-    process.stderr.write(`[DEBUG] allWords[${wordIdx}] = "${allWords[wordIdx]?.text}"
-`);
-  }
   let wordCounter = 0;
   let totalWordsOnPages = 0;
   for (let pageIdx = 0;pageIdx < pages.length; pageIdx++) {
@@ -41003,10 +41006,6 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
           let para = groups.find((g) => lineIdx >= g.start && lineIdx <= g.end);
           if (!para)
             para = { start: lineIdx, end: lineIdx };
-          if (isDebug) {
-            process.stderr.write(`[DEBUG] Found at position ${wordCounter}: "${m[0]}" on page ${pageIdx}, line ${lineIdx}
-`);
-          }
           const wordIndexInPara = getWordIndexInParagraph(pages, pageIdx, lineIdx, m.index, para.start);
           return {
             pageIndex: pageIdx,
@@ -41023,10 +41022,6 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
         wordCounter++;
       }
     }
-  }
-  if (isDebug) {
-    process.stderr.write(`[DEBUG] FAILED: Only found ${totalWordsOnPages} words on pages, but looking for index ${wordIdx}
-`);
   }
   let estimatedPageIdx = 0;
   if (pages.length > 1) {
@@ -41356,20 +41351,10 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                     wordColStart: w.start,
                     wordColEnd: w.end
                   };
-                  process.stderr.write(`
-[DEBUG SELECT] Word selected: "${w.text}" at index ${wordIdx ?? "NOT FOUND"} (page ${targetPageIdx}, line ${lineIdx})
-`);
-                  if (!found) {
-                    process.stderr.write(`[DEBUG] findWordExact returned null for word "${w.text}"
-`);
-                  }
                 }
               }
             } else {
               const chapterIdx = pages[targetPageIdx]?.chapterIndex;
-              process.stderr.write(`
-[DEBUG SELECT] About to call getParaIndexInChapter with pageIdx=${targetPageIdx}, para=${para.start}-${para.end}, chapter=${chapterIdx}
-`);
               const paraIdx = getParaIndexInChapter(pages, targetPageIdx, para.start, para.end);
               selection = {
                 pageIndex: targetPageIdx,
@@ -41384,8 +41369,6 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 paraIndexInChapter: paraIdx,
                 wordIndexInPara: null
               };
-              process.stderr.write(`[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}
-`);
             }
           } else {
             selection = null;
@@ -41521,9 +41504,6 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
   const getCurrentWordIndex = () => {
     const chunk = chunks[currentChunk];
     const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
-    process.stderr.write(`
-[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}
-`);
     return wordIdx;
   };
   const initialHierarchical = getHierarchicalIndexForWord(getCurrentWordIndex(), words, pages);

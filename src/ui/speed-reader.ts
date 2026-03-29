@@ -168,6 +168,7 @@ export class SpeedReader {
   private initialized = false;
   private lastSentenceText = "";
   private lastHeaderText = "";
+  private lastFooterText = "";
   private lastHighlightLine = -1;
   private lastSize = { cols: 0, rows: 0 };
 
@@ -184,6 +185,7 @@ export class SpeedReader {
     this.initialized = false;
     this.lastSentenceText = "";
     this.lastHeaderText = "";
+    this.lastFooterText = "";
     this.lastHighlightLine = -1;
     this.lastSize = { cols: 0, rows: 0 };
   }
@@ -216,17 +218,19 @@ export class SpeedReader {
   }
 
   private _buildHeaderText(progress: number): string {
-    const { wpm, chunkSize, paused, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
+    const { wpm, chunkSize, paused } = this.state;
     const ttsFlag = (this.state as SpeedReaderState & { tts?: boolean }).tts ? "  🔊" : "";
+    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "■ PAUSED" : "▶"}`;
+  }
 
-    // Build hierarchical index if available
+  private _buildFooterText(): string {
+    const { chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
     let indexPath = "";
     if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
       const wordIdx = wordIndexInPara ?? "?";
       indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
     }
-
-    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "■ PAUSED" : "▶"}${indexPath}`;
+    return `[space] pause  [→][←] skip  [↑][↓] sentence  [+][-] wpm  [[]]] chunk  [q] back${indexPath}`;
   }
 
   private _writeHeader(headerText: string, spritzRow: number, cols: number, t: ColorTheme): void {
@@ -234,6 +238,13 @@ export class SpeedReader {
     this.lastHeaderText = headerText;
     moveTo(spritzRow - 2, 1);
     process.stdout.write(t.dim + centerPad(headerText, cols) + ANSI.reset);
+  }
+
+  private _writeFooter(footerText: string, rows: number, cols: number, t: ColorTheme): void {
+    if (footerText === this.lastFooterText) return;
+    this.lastFooterText = footerText;
+    moveTo(rows - 2, 1);
+    process.stdout.write(t.dim + centerPad(footerText, cols) + ANSI.reset);
   }
 
   private _layout(cols: number, rows: number) {
@@ -286,12 +297,7 @@ export class SpeedReader {
     moveTo(spritzRow + 3, 1); process.stdout.write(makeBorder("┴"));
     moveTo(spritzRow + 4, 1); process.stdout.write(tickLine);
 
-    moveTo(rows - 2, 1);
-    process.stdout.write(
-      t.dim +
-      centerPad("[space] pause  [→][←] skip  [↑][↓] sentence  [+][-] wpm  [[]]] chunk  [q] back", cols) +
-      ANSI.reset
-    );
+    this._writeFooter(this._buildFooterText(), rows, cols, t);
   }
 
   private _partialRender(cols: number, rows: number): void {
@@ -309,8 +315,9 @@ export class SpeedReader {
     moveTo(spritzRow + 2, 1);
     process.stdout.write(this._buildWordLine(word, orp, wordStart, t, cols));
 
-    // Update header
+    // Update header and footer
     this._writeHeader(this._buildHeaderText(this.getProgress()), spritzRow, cols, t);
+    this._writeFooter(this._buildFooterText(), rows, cols, t);
   }
 
   handleKey(
