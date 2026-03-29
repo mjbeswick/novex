@@ -13,6 +13,12 @@ export interface SpeedReaderState {
   text: string;
   /** Flat word array (same words as chunks, unflattened) */
   allWords: Word[];
+  /** Optional: current chapter index */
+  chapterIndex?: number;
+  /** Optional: current paragraph index within chapter */
+  paraIndexInChapter?: number;
+  /** Optional: current word index within paragraph */
+  wordIndexInPara?: number | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -210,9 +216,17 @@ export class SpeedReader {
   }
 
   private _buildHeaderText(progress: number): string {
-    const { wpm, chunkSize, paused } = this.state;
+    const { wpm, chunkSize, paused, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
     const ttsFlag = (this.state as SpeedReaderState & { tts?: boolean }).tts ? "  🔊" : "";
-    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "■ PAUSED" : "▶"}`;
+
+    // Build hierarchical index if available
+    let indexPath = "";
+    if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
+      const wordIdx = wordIndexInPara ?? "?";
+      indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
+    }
+
+    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "■ PAUSED" : "▶"}${indexPath}`;
   }
 
   private _writeHeader(headerText: string, spritzRow: number, cols: number, t: ColorTheme): void {

@@ -324,6 +324,7 @@ export async function runSession(
             content, options, chunks, words, currentWord,
             (newMode) => { currentMode = newMode; },
             () => { running = false; },
+            pages,
             () => resizePending,
             pages.length
           );
@@ -367,6 +368,7 @@ interface SelectionState {
   wordColEnd: number | null;
   chapterIndex?: number;
   paraIndexInChapter?: number;
+  wordIndexInPara?: number | null;  // index within current paragraph
 }
 
 function getParagraphGroups(lines: string[]): {start: number, end: number}[] {
@@ -438,6 +440,72 @@ function getParaIndexInChapter(
     }
   }
   return 0;
+}
+
+/**
+ * Calculate the word's index within its paragraph (0-indexed).
+ * Counts words from paraStart to the line containing the word.
+ */
+function getWordIndexInParagraph(
+  pages: ReturnType<typeof buildPages>,
+  pageIdx: number,
+  wordLine: number | null,
+  wordColStart: number | null,
+  paraStart: number
+): number | null {
+  if (wordLine === null || wordColStart === null) return null;
+
+  const page = pages[pageIdx];
+  if (!page) return null;
+
+  let wordCount = 0;
+  for (let lineIdx = paraStart; lineIdx <= wordLine; lineIdx++) {
+    const line = page.lines?.[lineIdx];
+    if (!line) break;
+
+    // Strip ANSI codes to count visible words
+    const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+    const re = /\S+/g;
+    let m: RegExpExecArray | null;
+
+    while ((m = re.exec(stripped)) !== null) {
+      // If this is the line with our word, check if this is our word
+      if (lineIdx === wordLine) {
+        if (m.index <= wordColStart && wordColStart < m.index + m[0].length) {
+          return wordCount;
+        }
+      }
+      wordCount++;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get the hierarchical index info (chapter, paragraph, word) for a word at the given index.
+ * Returns an object with chapterIndex, paraIndexInChapter, and wordIndexInPara.
+ */
+function getHierarchicalIndexForWord(
+  wordIdx: number,
+  allWords: ReturnType<typeof extractWords>,
+  pages: ReturnType<typeof buildPages>
+): { chapterIndex: number; paraIndexInChapter: number; wordIndexInPara: number | null } | null {
+  const selection = createSelectionFromWordIndex(wordIdx, allWords, pages);
+  if (!selection) return null;
+
+  // If we have the position info, we can return everything
+  if (selection.wordLine !== null) {
+    const chapterIndex = selection.chapterIndex ?? 0;
+    const paraIndexInChapter = selection.paraIndexInChapter ?? 0;
+    const wordIndexInPara = selection.wordIndexInPara ?? null;
+    return { chapterIndex, paraIndexInChapter, wordIndexInPara };
+  }
+
+  // Fallback: at least return chapter and paragraph info
+  const chapterIndex = selection.chapterIndex ?? 0;
+  const paraIndexInChapter = selection.paraIndexInChapter ?? 0;
+  return { chapterIndex, paraIndexInChapter, wordIndexInPara: null };
 }
 
 /**
@@ -539,6 +607,8 @@ function createSelectionFromWordIndex(
             process.stderr.write(`[DEBUG] Found at position ${wordCounter}: "${m[0]}" on page ${pageIdx}, line ${lineIdx}\n`);
           }
 
+          const wordIndexInPara = getWordIndexInParagraph(pages, pageIdx, lineIdx, m.index, para.start);
+
           return {
             pageIndex: pageIdx,
             paraStart: para.start,
@@ -548,6 +618,7 @@ function createSelectionFromWordIndex(
             wordLine: lineIdx,
             wordColStart: m.index,
             wordColEnd: m.index + m[0].length - 1,
+            wordIndexInPara,
           };
         }
         wordCounter++;
@@ -575,6 +646,7 @@ function createSelectionFromWordIndex(
     wordLine: null,
     wordColStart: null,
     wordColEnd: null,
+    wordIndexInPara: null,
   };
 }
 
@@ -953,6 +1025,7 @@ async function runPageMode(
                 wordColEnd: null,
                 chapterIndex: chapterIdx,
                 paraIndexInChapter: paraIdx,
+                wordIndexInPara: null,
               };
               // DEBUG: Print what paragraph was selected
               process.stderr.write(`[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}\n`);
@@ -1086,6 +1159,7 @@ async function runSpeedMode(
   startWord: number,
   switchMode: (m: ReadingMode) => void,
   quit: () => void,
+  pages: ReturnType<typeof buildPages>,
   isResizePending: () => boolean,
   totalPages: number
 ): Promise<number> {
@@ -1123,6 +1197,17 @@ async function runSpeedMode(
 
   const tts = options.tts ? createTts() : null;
 
+  const getCurrentWordIndex = (): number => {
+    const chunk = chunks[currentChunk];
+    const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
+    // DEBUG: Uncomment to see what word index is returned when quitting
+    process.stderr.write(`\n[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}\n`);
+    return wordIdx;
+  };
+
+  // Calculate initial hierarchical index
+  const initialHierarchical = getHierarchicalIndexForWord(getCurrentWordIndex(), words, pages);
+
   const view = new SpeedReader({
     words: chunks,
     currentChunk,
@@ -1132,16 +1217,26 @@ async function runSpeedMode(
     theme: options.theme,
     text: content.text,
     allWords: words,
+    ...(initialHierarchical && {
+      chapterIndex: initialHierarchical.chapterIndex,
+      paraIndexInChapter: initialHierarchical.paraIndexInChapter,
+      wordIndexInPara: initialHierarchical.wordIndexInPara,
+    }),
   });
 
   view.render();
 
-  const getCurrentWordIndex = (): number => {
-    const chunk = chunks[currentChunk];
-    const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
-    // DEBUG: Uncomment to see what word index is returned when quitting
-    process.stderr.write(`\n[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}\n`);
-    return wordIdx;
+  const getStateUpdateWithIndex = () => {
+    const wordIdx = getCurrentWordIndex();
+    const hierarchical = getHierarchicalIndexForWord(wordIdx, words, pages);
+    return {
+      currentChunk,
+      ...(hierarchical && {
+        chapterIndex: hierarchical.chapterIndex,
+        paraIndexInChapter: hierarchical.paraIndexInChapter,
+        wordIndexInPara: hierarchical.wordIndexInPara,
+      }),
+    };
   };
 
   const syncTts = () => {
@@ -1169,7 +1264,7 @@ async function runSpeedMode(
         // Advance to next chunk
         if (currentChunk < chunks.length - 1) {
           currentChunk++;
-          view.updateState({ currentChunk });
+          view.updateState(getStateUpdateWithIndex());
           view.render();
           syncTts();
           if (!options.noSave) {
@@ -1205,7 +1300,7 @@ async function runSpeedMode(
       view.render();
     } else if (action === "next") {
       currentChunk = clamp(currentChunk + 1, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
       if (!options.noSave) {
@@ -1213,7 +1308,7 @@ async function runSpeedMode(
       }
     } else if (action === "prev") {
       currentChunk = clamp(currentChunk - 1, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
       if (!options.noSave) {
@@ -1223,14 +1318,14 @@ async function runSpeedMode(
       const wordsPerChunk = Math.max(1, chunkSize);
       const chunksToSkip = Math.ceil(SENTENCE_SKIP / wordsPerChunk);
       currentChunk = clamp(currentChunk + chunksToSkip, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
     } else if (action === "skip-sentence-back") {
       const wordsPerChunk = Math.max(1, chunkSize);
       const chunksToSkip = Math.ceil(SENTENCE_SKIP / wordsPerChunk);
       currentChunk = clamp(currentChunk - chunksToSkip, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
     } else if (action === "wpm-up") {
@@ -1246,12 +1341,12 @@ async function runSpeedMode(
     } else if (action === "chunk-up") {
       chunkSize = Math.min(chunkSize + 1, 10);
       rebuildChunks(chunkSize);
-      view.updateState({ words: chunks, currentChunk, chunkSize });
+      view.updateState({ ...getStateUpdateWithIndex(), words: chunks, chunkSize });
       view.render();
     } else if (action === "chunk-down") {
       chunkSize = Math.max(chunkSize - 1, 1);
       rebuildChunks(chunkSize);
-      view.updateState({ words: chunks, currentChunk, chunkSize });
+      view.updateState({ ...getStateUpdateWithIndex(), words: chunks, chunkSize });
       view.render();
     } else if (action === "quit") {
       switchMode("page");

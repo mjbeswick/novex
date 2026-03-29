@@ -12,6 +12,7 @@ export interface PageSelection {
   wordColEnd: number | null;
   wordText: string | null;
   wordIndex: number | null;   // index in allWords array
+  wordIndexInPara: number | null; // index within current paragraph
   chapterIndex?: number;      // chapter index
   paraIndexInChapter?: number; // paragraph index within the chapter
 }
@@ -330,10 +331,11 @@ export class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       let indexPath = "";
-      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && selection.wordIndex !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${selection.wordIndex}]`;
-      } else if (selection.wordIndex !== null) {
-        indexPath = ` [word ${selection.wordIndex}]`;
+      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex; // Use relative index if available
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx}]`;
+      } else if (wordIdx !== null) {
+        indexPath = ` [word ${wordIdx}]`;
       }
       hintsText = `"${selection.wordText}"${indexPath} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
@@ -499,10 +501,11 @@ export class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       let indexPath = "";
-      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && selection.wordIndex !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${selection.wordIndex}]`;
-      } else if (selection.wordIndex !== null) {
-        indexPath = ` [word ${selection.wordIndex}]`;
+      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex; // Use relative index if available
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx}]`;
+      } else if (wordIdx !== null) {
+        indexPath = ` [word ${wordIdx}]`;
       }
       hintsText = `"${selection.wordText}"${indexPath} · [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {

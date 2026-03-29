@@ -39164,10 +39164,11 @@ class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search${imageHint} [q]uit [?]help`;
     } else if (selection.wordText) {
       let indexPath = "";
-      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && selection.wordIndex !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${selection.wordIndex}]`;
-      } else if (selection.wordIndex !== null) {
-        indexPath = ` [word ${selection.wordIndex}]`;
+      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex;
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx}]`;
+      } else if (wordIdx !== null) {
+        indexPath = ` [word ${wordIdx}]`;
       }
       hintsText = `"${selection.wordText}"${indexPath} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
@@ -39278,10 +39279,11 @@ class PageView {
       hintsText = `[n]ext [p]rev ${bmLabel} [B]marks [s]peed [v]scroll [T]oc [/]search [q]uit [?]help`;
     } else if (selection.wordText) {
       let indexPath = "";
-      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && selection.wordIndex !== null) {
-        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${selection.wordIndex}]`;
-      } else if (selection.wordIndex !== null) {
-        indexPath = ` [word ${selection.wordIndex}]`;
+      const wordIdx = selection.wordIndexInPara ?? selection.wordIndex;
+      if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined && wordIdx !== null) {
+        indexPath = ` [ch ${selection.chapterIndex}/para ${selection.paraIndexInChapter + 1}/word ${wordIdx}]`;
+      } else if (wordIdx !== null) {
+        indexPath = ` [word ${wordIdx}]`;
       }
       hintsText = `"${selection.wordText}"${indexPath} \xB7 [s]peed ${bmLabel} [B]marks [t]ts [c]lear`;
     } else {
@@ -39521,9 +39523,14 @@ class SpeedReader {
     }
   }
   _buildHeaderText(progress) {
-    const { wpm, chunkSize, paused } = this.state;
+    const { wpm, chunkSize, paused, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
     const ttsFlag = this.state.tts ? "  \uD83D\uDD0A" : "";
-    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}`;
+    let indexPath = "";
+    if (chapterIndex !== undefined && paraIndexInChapter !== undefined) {
+      const wordIdx = wordIndexInPara ?? "?";
+      indexPath = ` [ch ${chapterIndex}/para ${paraIndexInChapter + 1}/word ${wordIdx}]`;
+    }
+    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}${indexPath}`;
   }
   _writeHeader(headerText, spritzRow, cols, t) {
     if (headerText === this.lastHeaderText)
@@ -40815,7 +40822,7 @@ async function runSession(content, options2, initialPosition) {
             currentMode = newMode;
           }, () => {
             running = false;
-          }, () => resizePending, pages.length);
+          }, pages, () => resizePending, pages.length);
           break;
         default:
           running = false;
@@ -40896,6 +40903,45 @@ function getParaIndexInChapter(pages, pageIdx, paraStart, paraEnd) {
   }
   return 0;
 }
+function getWordIndexInParagraph(pages, pageIdx, wordLine, wordColStart, paraStart) {
+  if (wordLine === null || wordColStart === null)
+    return null;
+  const page = pages[pageIdx];
+  if (!page)
+    return null;
+  let wordCount = 0;
+  for (let lineIdx = paraStart;lineIdx <= wordLine; lineIdx++) {
+    const line = page.lines?.[lineIdx];
+    if (!line)
+      break;
+    const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+    const re = /\S+/g;
+    let m;
+    while ((m = re.exec(stripped)) !== null) {
+      if (lineIdx === wordLine) {
+        if (m.index <= wordColStart && wordColStart < m.index + m[0].length) {
+          return wordCount;
+        }
+      }
+      wordCount++;
+    }
+  }
+  return null;
+}
+function getHierarchicalIndexForWord(wordIdx, allWords, pages) {
+  const selection = createSelectionFromWordIndex(wordIdx, allWords, pages);
+  if (!selection)
+    return null;
+  if (selection.wordLine !== null) {
+    const chapterIndex2 = selection.chapterIndex ?? 0;
+    const paraIndexInChapter2 = selection.paraIndexInChapter ?? 0;
+    const wordIndexInPara = selection.wordIndexInPara ?? null;
+    return { chapterIndex: chapterIndex2, paraIndexInChapter: paraIndexInChapter2, wordIndexInPara };
+  }
+  const chapterIndex = selection.chapterIndex ?? 0;
+  const paraIndexInChapter = selection.paraIndexInChapter ?? 0;
+  return { chapterIndex, paraIndexInChapter, wordIndexInPara: null };
+}
 function findWordExact(text, allWords, targetPageIdx, targetLineIdx, targetCol, pages) {
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   const targetNorm = norm(text);
@@ -40961,6 +41007,7 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
             process.stderr.write(`[DEBUG] Found at position ${wordCounter}: "${m[0]}" on page ${pageIdx}, line ${lineIdx}
 `);
           }
+          const wordIndexInPara = getWordIndexInParagraph(pages, pageIdx, lineIdx, m.index, para.start);
           return {
             pageIndex: pageIdx,
             paraStart: para.start,
@@ -40969,7 +41016,8 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
             wordIndex: wordIdx,
             wordLine: lineIdx,
             wordColStart: m.index,
-            wordColEnd: m.index + m[0].length - 1
+            wordColEnd: m.index + m[0].length - 1,
+            wordIndexInPara
           };
         }
         wordCounter++;
@@ -40993,7 +41041,8 @@ function createSelectionFromWordIndex(wordIdx, allWords, pages) {
     wordIndex: wordIdx,
     wordLine: null,
     wordColStart: null,
-    wordColEnd: null
+    wordColEnd: null,
+    wordIndexInPara: null
   };
 }
 async function runPageMode(content, options2, pages, startPage, switchMode, quit, allWords, _chunks, setCurrentWord, isResizePending, initialWordIndex = null, allWordsForSelection = allWords) {
@@ -41332,7 +41381,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
                 wordColStart: null,
                 wordColEnd: null,
                 chapterIndex: chapterIdx,
-                paraIndexInChapter: paraIdx
+                paraIndexInChapter: paraIdx,
+                wordIndexInPara: null
               };
               process.stderr.write(`[DEBUG SELECT] Paragraph selected at page ${targetPageIdx}, lines ${para.start}-${para.end}, chapter ${chapterIdx}, para ${paraIdx}
 `);
@@ -41437,7 +41487,7 @@ async function runScrollMode(content, options2, allLines, startOffset, switchMod
     }
   }
 }
-async function runSpeedMode(content, options2, initialChunks, words, startWord, switchMode, quit, isResizePending, totalPages) {
+async function runSpeedMode(content, options2, initialChunks, words, startWord, switchMode, quit, pages, isResizePending, totalPages) {
   if (initialChunks.length === 0) {
     quit();
     return 0;
@@ -41468,6 +41518,15 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
   }
   let paused = true;
   const tts = options2.tts ? createTts() : null;
+  const getCurrentWordIndex = () => {
+    const chunk = chunks[currentChunk];
+    const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
+    process.stderr.write(`
+[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}
+`);
+    return wordIdx;
+  };
+  const initialHierarchical = getHierarchicalIndexForWord(getCurrentWordIndex(), words, pages);
   const view = new SpeedReader({
     words: chunks,
     currentChunk,
@@ -41476,16 +41535,25 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
     paused,
     theme: options2.theme,
     text: content.text,
-    allWords: words
+    allWords: words,
+    ...initialHierarchical && {
+      chapterIndex: initialHierarchical.chapterIndex,
+      paraIndexInChapter: initialHierarchical.paraIndexInChapter,
+      wordIndexInPara: initialHierarchical.wordIndexInPara
+    }
   });
   view.render();
-  const getCurrentWordIndex = () => {
-    const chunk = chunks[currentChunk];
-    const wordIdx = chunk && chunk.length > 0 ? chunk[0].index : 0;
-    process.stderr.write(`
-[DEBUG Speed] getCurrentWordIndex: chunk=${currentChunk}, word=${wordIdx}
-`);
-    return wordIdx;
+  const getStateUpdateWithIndex = () => {
+    const wordIdx = getCurrentWordIndex();
+    const hierarchical = getHierarchicalIndexForWord(wordIdx, words, pages);
+    return {
+      currentChunk,
+      ...hierarchical && {
+        chapterIndex: hierarchical.chapterIndex,
+        paraIndexInChapter: hierarchical.paraIndexInChapter,
+        wordIndexInPara: hierarchical.wordIndexInPara
+      }
+    };
   };
   const syncTts = () => {
     if (!tts)
@@ -41511,7 +41579,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       if (result.type === "tick") {
         if (currentChunk < chunks.length - 1) {
           currentChunk++;
-          view.updateState({ currentChunk });
+          view.updateState(getStateUpdateWithIndex());
           view.render();
           syncTts();
           if (!options2.noSave) {
@@ -41547,7 +41615,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       view.render();
     } else if (action === "next") {
       currentChunk = clamp(currentChunk + 1, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
       if (!options2.noSave) {
@@ -41555,7 +41623,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       }
     } else if (action === "prev") {
       currentChunk = clamp(currentChunk - 1, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
       if (!options2.noSave) {
@@ -41565,14 +41633,14 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
       const wordsPerChunk = Math.max(1, chunkSize);
       const chunksToSkip = Math.ceil(SENTENCE_SKIP / wordsPerChunk);
       currentChunk = clamp(currentChunk + chunksToSkip, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
     } else if (action === "skip-sentence-back") {
       const wordsPerChunk = Math.max(1, chunkSize);
       const chunksToSkip = Math.ceil(SENTENCE_SKIP / wordsPerChunk);
       currentChunk = clamp(currentChunk - chunksToSkip, 0, chunks.length - 1);
-      view.updateState({ currentChunk });
+      view.updateState(getStateUpdateWithIndex());
       view.render();
       syncTts();
     } else if (action === "wpm-up") {
@@ -41594,12 +41662,12 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
     } else if (action === "chunk-up") {
       chunkSize = Math.min(chunkSize + 1, 10);
       rebuildChunks(chunkSize);
-      view.updateState({ words: chunks, currentChunk, chunkSize });
+      view.updateState({ ...getStateUpdateWithIndex(), words: chunks, chunkSize });
       view.render();
     } else if (action === "chunk-down") {
       chunkSize = Math.max(chunkSize - 1, 1);
       rebuildChunks(chunkSize);
-      view.updateState({ words: chunks, currentChunk, chunkSize });
+      view.updateState({ ...getStateUpdateWithIndex(), words: chunks, chunkSize });
       view.render();
     } else if (action === "quit") {
       switchMode("page");
