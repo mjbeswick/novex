@@ -241,7 +241,7 @@ export class PageView {
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex + 1}, para ${selection.paraIndexInChapter + 1}]`;
+        paraInfo = ` [ch ${selection.chapterIndex}, para ${selection.paraIndexInChapter + 1}]`;
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
@@ -403,7 +403,7 @@ export class PageView {
     } else {
       let paraInfo = "";
       if (selection.chapterIndex !== undefined && selection.paraIndexInChapter !== undefined) {
-        paraInfo = ` [ch ${selection.chapterIndex + 1}, para ${selection.paraIndexInChapter + 1}]`;
+        paraInfo = ` [ch ${selection.chapterIndex}, para ${selection.paraIndexInChapter + 1}]`;
       } else if (selection.pageIndex !== undefined) {
         paraInfo = ` [page ${selection.pageIndex + 1}]`;
       }
