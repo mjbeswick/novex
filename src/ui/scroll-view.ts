@@ -26,7 +26,7 @@ function formatHints(text: string, t: ColorTheme): string {
 }
 
 function visLen(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 
 function padEnd(str: string, width: number): string {

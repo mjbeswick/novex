@@ -137,7 +137,7 @@ export function wrapText(text: string, width: number): string[] {
  */
 function visibleLength(str: string): number {
   // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return str.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 
 /**
@@ -247,10 +247,17 @@ export function wrapHtml(html: string, width: number, theme: Theme = "dark"): st
 
   // ── Inline formatting ────────────────────────────────────────────────────────
 
-  // <a href="…"> → underline blue (keep link text, drop href)
+  // <a href="…"> → underline blue with OSC 8 hyperlink (clickable in supported terminals)
   processed = processed.replace(
-    /<a\b[^>]*>([\s\S]*?)<\/a>/gi,
-    (_, txt) => `${cs.link}${txt}${ANSI_RESET}`
+    /<a\b([^>]*)>([\s\S]*?)<\/a>/gi,
+    (_, attrs, txt) => {
+      const hrefMatch = attrs.match(/href\s*=\s*["']([^"']*)["']/i);
+      const href = hrefMatch ? hrefMatch[1] : "";
+      if (href && /^https?:\/\//i.test(href)) {
+        return `\x1b]8;;${href}\x07${cs.link}${txt}${ANSI_RESET}\x1b]8;;\x07`;
+      }
+      return `${cs.link}${txt}${ANSI_RESET}`;
+    }
   );
 
   // Inline <code> → dim with backtick-style

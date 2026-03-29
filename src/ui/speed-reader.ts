@@ -32,7 +32,7 @@ function centerPad(str: string, width: number): string {
 }
 
 function stripAnsi(str: string): string {
-  return str.replace(/\x1b\[[0-9;]*m/g, "");
+  return str.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
 }
 
 /**

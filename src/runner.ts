@@ -375,7 +375,7 @@ function getParagraphGroups(lines: string[]): {start: number, end: number}[] {
   const groups: {start: number, end: number}[] = [];
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
-    const blank = lines[i].replace(/\x1b\[[0-9;]*m/g, "").trim().length === 0;
+    const blank = lines[i].replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").trim().length === 0;
     if (!blank && start === -1) start = i;
     else if (blank && start !== -1) { groups.push({start, end: i - 1}); start = -1; }
   }
@@ -384,7 +384,7 @@ function getParagraphGroups(lines: string[]): {start: number, end: number}[] {
 }
 
 function wordAtColumn(ansiLine: string, col: number): {text: string, start: number, end: number} | null {
-  const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+  const stripped = ansiLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
   const re = /\S+/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(stripped)) !== null) {
@@ -464,7 +464,7 @@ function getWordIndexInParagraph(
     if (!line) break;
 
     // Strip ANSI codes to count visible words
-    const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+    const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
     const re = /\S+/g;
     let m: RegExpExecArray | null;
 
@@ -580,7 +580,7 @@ function findWordExact(
       if (pageIdx === targetPageIdx && lineIdx > targetLineIdx) break;
 
       const ansiLine = lines[lineIdx];
-      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
       const re = /\S+/g;
       let m: RegExpExecArray | null;
 
@@ -626,7 +626,7 @@ function createSelectionFromWordIndex(
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const ansiLine = lines[lineIdx];
-      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m/g, "");
+      const stripped = ansiLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
       const re = /\S+/g;
       let m: RegExpExecArray | null;
 
@@ -738,7 +738,7 @@ async function runPageMode(
             const re = new RegExp(`(?:^|\\s)${escaped}(?:\\s|$|[.,;!?:])`, "i");
             let found = false;
             for (let li = 0; li < pageLines.length; li++) {
-              if (re.test((pageLines[li] ?? "").replace(/\x1b\[[0-9;]*m/g, ""))) {
+              if (re.test((pageLines[li] ?? "").replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, ""))) {
                 set.add(li); found = true; break;
               }
             }
@@ -827,7 +827,7 @@ async function runPageMode(
         } else if (selection) {
           pos = positionToString({ type: "page", page: selection.pageIndex });
           const firstLine = (pages[selection.pageIndex]?.lines[selection.paraStart] ?? "")
-            .replace(/\x1b\[[0-9;]*m/g, "").trim();
+            .replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").trim();
           note = firstLine.length > 40 ? firstLine.slice(0, 40) + "…" : firstLine;
         } else {
           pos = positionToString({ type: "page", page: currentPage });
@@ -853,7 +853,7 @@ async function runPageMode(
           const selPage = pages[selection.pageIndex];
           const selLines = selPage?.lines ?? [];
           outer: for (let li = selection.paraStart; li <= Math.min(selection.paraEnd, selection.paraStart + 3); li++) {
-            const stripped = (selLines[li] ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+            const stripped = (selLines[li] ?? "").replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
             const re = /\S+/g;
             let m: RegExpExecArray | null;
             while ((m = re.exec(stripped)) !== null) {
@@ -867,7 +867,7 @@ async function runPageMode(
           const curPage = pages[currentPage];
           if (curPage && curPage.lines.length > 0) {
             const firstLine = curPage.lines[0];
-            const stripped = firstLine.replace(/\x1b\[[0-9;]*m/g, "");
+            const stripped = firstLine.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
             const re = /\S+/g;
             const m = re.exec(stripped);
             if (m) {
@@ -949,7 +949,7 @@ async function runPageMode(
           const imageRegex = /\[Image (\d+)\]/;
           let foundImageId: string | null = null;
           for (const line of pageLines) {
-            const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+            const stripped = line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "");
             const match = stripped.match(imageRegex);
             if (match) {
               foundImageId = match[1];

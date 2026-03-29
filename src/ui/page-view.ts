@@ -49,9 +49,9 @@ function padEnd(str: string, width: number): string {
   return str + " ".repeat(width - str.length);
 }
 
-/** Strip ANSI sequences for visible-length calculations. */
+/** Strip ANSI sequences (CSI SGR + OSC 8 hyperlinks) for visible-length calculations. */
 function visLen(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  return s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, "").length;
 }
 
 /** Detect if a line contains image placeholders. */
@@ -84,6 +84,15 @@ function fitAnsi(str: string, width: number): string {
         continue;
       }
     }
+    // Consume OSC 8 hyperlink sequences without counting as visible
+    if (str.charCodeAt(i) === 0x1b && str[i + 1] === "]" && str[i + 2] === "8" && str[i + 3] === ";") {
+      const end = str.indexOf("\x07", i + 4);
+      if (end !== -1) {
+        result += str.slice(i, end + 1); // always keep hyperlink markers
+        i = end + 1;
+        continue;
+      }
+    }
     if (visible < width) {
       result += str[i];
       visible++;
@@ -107,6 +116,11 @@ function highlightWord(line: string, colStart: number, colEnd: number): string {
   while (i < line.length) {
     if (line.charCodeAt(i) === 0x1b && line[i + 1] === "[") {
       const end = line.indexOf("m", i + 2);
+      if (end !== -1) { result += line.slice(i, end + 1); i = end + 1; continue; }
+    }
+    // Skip OSC 8 hyperlink sequences without counting as visible
+    if (line.charCodeAt(i) === 0x1b && line[i + 1] === "]" && line[i + 2] === "8" && line[i + 3] === ";") {
+      const end = line.indexOf("\x07", i + 4);
       if (end !== -1) { result += line.slice(i, end + 1); i = end + 1; continue; }
     }
     if (!opened && visible === colStart) { result += "\x1b[1m\x1b[4m"; opened = true; }
