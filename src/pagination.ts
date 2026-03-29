@@ -158,7 +158,7 @@ function visibleLength(str: string): number {
  *
  * `theme` controls colour palette (defaults to "dark").
  */
-export function wrapHtml(html: string, width: number, theme: Theme = "dark"): string[] {
+export function wrapHtml(html: string, width: number, theme: Theme = "dark", linkMap?: Map<string, number>): string[] {
   if (width <= 0) width = 80;
 
   const cs = contentStyle(theme);
@@ -248,15 +248,31 @@ export function wrapHtml(html: string, width: number, theme: Theme = "dark"): st
   // ── Inline formatting ────────────────────────────────────────────────────────
 
   // <a href="…"> → underline blue with OSC 8 hyperlink (clickable in supported terminals)
+  // Each word is wrapped individually so link styling survives word-wrapping.
   processed = processed.replace(
     /<a\b([^>]*)>([\s\S]*?)<\/a>/gi,
     (_, attrs, txt) => {
       const hrefMatch = attrs.match(/href\s*=\s*["']([^"']*)["']/i);
       const href = hrefMatch ? hrefMatch[1] : "";
+      const plainTxt = txt.replace(/<[^>]+>/g, "");
+
+      // Resolve URL: external http(s), or internal chapter link via linkMap
+      let url = "";
       if (href && /^https?:\/\//i.test(href)) {
-        return `\x1b]8;;${href}\x07${cs.link}${txt}${ANSI_RESET}\x1b]8;;\x07`;
+        url = href;
+      } else if (href && linkMap) {
+        const hrefBase = href.split("#")[0];
+        const basename = hrefBase.split("/").pop() ?? hrefBase;
+        const chIdx = linkMap.get(hrefBase) ?? linkMap.get(basename);
+        if (chIdx !== undefined) url = `chapter:${chIdx}`;
       }
-      return `${cs.link}${txt}${ANSI_RESET}`;
+
+      // Wrap each word individually so styling survives word-wrapping
+      const words = plainTxt.split(/\s+/).filter(Boolean);
+      if (url) {
+        return words.map(w => `\x1b]8;;${url}\x07${cs.link}${w}${ANSI_RESET}\x1b]8;;\x07`).join(" ");
+      }
+      return words.map(w => `${cs.link}${w}${ANSI_RESET}`).join(" ");
     }
   );
 
@@ -426,7 +442,7 @@ export function buildPages(
   let globalPageIndex = 0;
 
   for (const chapter of content.chapters) {
-    const lines = wrapHtml(chapter.html, effectiveWidth, theme);
+    const lines = wrapHtml(chapter.html, effectiveWidth, theme, content.linkMap);
     const chapterPages = paginateText(lines, pageHeight);
 
     for (let pageIndexInChapter = 0; pageIndexInChapter < chapterPages.length; pageIndexInChapter++) {

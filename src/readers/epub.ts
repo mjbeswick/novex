@@ -87,6 +87,7 @@ export async function convertEpub(
 
   // --- 4. Extract chapters from spine ---
   const chapters: Chapter[] = [];
+  const linkMap = new Map<string, number>();
   let chapterIndex = 0;
 
   for (const idref of spineIdrefs) {
@@ -117,6 +118,12 @@ export async function convertEpub(
       `Chapter ${chapterIndex + 1}`;
 
     const text = htmlToPlainText(bodyHtml);
+
+    // Map href variants to chapter index for internal link resolution
+    linkMap.set(href, chapterIndex);
+    linkMap.set(fullPath, chapterIndex);
+    const basename = href.split("/").pop() ?? href;
+    if (basename !== href) linkMap.set(basename, chapterIndex);
 
     chapters.push({
       title,
@@ -151,6 +158,7 @@ export async function convertEpub(
     hash,
     chapters,
     images: images.size > 0 ? images : undefined,
+    linkMap: linkMap.size > 0 ? linkMap : undefined,
   };
 }
 

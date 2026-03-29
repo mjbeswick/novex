@@ -1034,13 +1034,26 @@ async function runPageMode(
           const page = pages[targetPageIdx];
           const lines = page?.lines ?? [];
 
-          // Check if the click is on a hyperlink — open it instead of selecting
+          // Check if the click is on a hyperlink
           const ansiLineForLink = lines[lineIdx] ?? "";
           const linkUrl = linkAtColumn(ansiLineForLink, adjustedCol);
           if (linkUrl) {
-            const cmd = process.platform === "darwin" ? "open"
-              : process.platform === "win32" ? "start" : "xdg-open";
-            Bun.spawn([cmd, linkUrl], { stdout: "ignore", stderr: "ignore" });
+            if (linkUrl.startsWith("chapter:")) {
+              // Internal link — navigate to chapter
+              const chIdx = parseInt(linkUrl.slice(8), 10);
+              const targetPage = pages.findIndex(p => p.chapterIndex === chIdx);
+              if (targetPage !== -1) {
+                currentPage = targetPage;
+                selection = null;
+                view.updateState({ currentPage, chapterTitle: getChapterTitle(), selection: null, isBookmarked: checkIsBookmarked(null), ...bookmarkLineState() });
+                view.render();
+              }
+            } else {
+              // External link — open in browser
+              const cmd = process.platform === "darwin" ? "open"
+                : process.platform === "win32" ? "start" : "xdg-open";
+              Bun.spawn([cmd, linkUrl], { stdout: "ignore", stderr: "ignore" });
+            }
             continue;
           }
 

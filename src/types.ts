@@ -29,6 +29,8 @@ export interface ParsedContent {
   hash: string;
   /** Map of image IDs to file paths for images in the book */
   images?: Map<string, string>;
+  /** Map of internal link hrefs to chapter indices (for EPUB navigation) */
+  linkMap?: Map<string, number>;
 }
 
 export interface Chapter {
