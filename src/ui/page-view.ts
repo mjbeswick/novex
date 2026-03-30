@@ -37,6 +37,8 @@ export interface PageViewState {
   coverImageEscape?: string;
   /** Map of image IDs to image paths. */
   images?: Map<string, string>;
+  /** Whether TTS service is available. */
+  ttsAvailable?: boolean;
 }
 
 /** Minimum terminal width to activate two-page spread layout. */
@@ -268,14 +270,15 @@ export class PageView {
   // ── Single-page layout ──────────────────────────────────────────────────────
 
   private renderSingle(cols: number, rows: number): void {
-    const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
+    const { pages, currentPage, theme, chapterTitle, title, selection, ttsAvailable } = this.state;
     const t = themes[theme];
 
     clearScreen();
 
     const totalPages = pages.length;
     const percent = totalPages > 1 ? Math.round((currentPage / (totalPages - 1)) * 100) : 100;
-    const statusRight = `${percent}% · pg ${currentPage + 1}/${totalPages}`;
+    const ttsFlag = ttsAvailable ? " 🔊" : "";
+    const statusRight = `${percent}% · pg ${currentPage + 1}/${totalPages}${ttsFlag}`;
     // Left: "title · chapter", right-aligned: status
     const leftLabel = title !== chapterTitle
       ? `${title} · ${chapterTitle}`
@@ -376,7 +379,7 @@ export class PageView {
   // ── Two-page spread layout ──────────────────────────────────────────────────
 
   private renderSpread(cols: number, rows: number): void {
-    const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
+    const { pages, currentPage, theme, chapterTitle, title, selection, ttsAvailable } = this.state;
     const t = themes[theme];
 
     clearScreen();
@@ -399,7 +402,8 @@ export class PageView {
 
     // ── Header row (with status integrated) ──────────────────────────────────
     const percent = totalPages > 1 ? Math.round((leftIdx / (totalPages - 1)) * 100) : 100;
-    const statusRight = `${percent}% · pg ${leftIdx + 1}${rightPage ? `–${rightIdx + 1}` : ""}/${totalPages}`;
+    const ttsFlag = ttsAvailable ? " 🔊" : "";
+    const statusRight = `${percent}% · pg ${leftIdx + 1}${rightPage ? `–${rightIdx + 1}` : ""}/${totalPages}${ttsFlag}`;
 
     // Left half header: "title · chapter"
     const leftLabel = title !== leftTitle ? `${title} · ${leftTitle}` : title;

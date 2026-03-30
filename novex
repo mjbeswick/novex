@@ -39134,12 +39134,13 @@ class PageView {
     }
   }
   renderSingle(cols, rows) {
-    const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
+    const { pages, currentPage, theme, chapterTitle, title, selection, ttsAvailable } = this.state;
     const t = themes[theme];
     clearScreen();
     const totalPages = pages.length;
     const percent = totalPages > 1 ? Math.round(currentPage / (totalPages - 1) * 100) : 100;
-    const statusRight = `${percent}% \xB7 pg ${currentPage + 1}/${totalPages}`;
+    const ttsFlag = ttsAvailable ? " \uD83D\uDD0A" : "";
+    const statusRight = `${percent}% \xB7 pg ${currentPage + 1}/${totalPages}${ttsFlag}`;
     const leftLabel = title !== chapterTitle ? `${title} \xB7 ${chapterTitle}` : title;
     const gap = cols - visLen(leftLabel) - visLen(statusRight);
     const headerLine = leftLabel + " ".repeat(Math.max(gap, 1)) + statusRight;
@@ -39210,7 +39211,7 @@ class PageView {
     process.stdout.write(t.dim + formatHints(hintsText, t, this.hoveredShortcut ?? undefined) + ANSI.reset);
   }
   renderSpread(cols, rows) {
-    const { pages, currentPage, theme, chapterTitle, title, selection } = this.state;
+    const { pages, currentPage, theme, chapterTitle, title, selection, ttsAvailable } = this.state;
     const t = themes[theme];
     clearScreen();
     const totalPages = pages.length;
@@ -39225,7 +39226,8 @@ class PageView {
     const leftTitle = leftPage ? this.getChapterTitle(leftIdx) ?? chapterTitle : chapterTitle;
     const rightTitle = rightPage ? this.getChapterTitle(rightIdx) ?? chapterTitle : "";
     const percent = totalPages > 1 ? Math.round(leftIdx / (totalPages - 1) * 100) : 100;
-    const statusRight = `${percent}% \xB7 pg ${leftIdx + 1}${rightPage ? `\u2013${rightIdx + 1}` : ""}/${totalPages}`;
+    const ttsFlag = ttsAvailable ? " \uD83D\uDD0A" : "";
+    const statusRight = `${percent}% \xB7 pg ${leftIdx + 1}${rightPage ? `\u2013${rightIdx + 1}` : ""}/${totalPages}${ttsFlag}`;
     const leftLabel = title !== leftTitle ? `${title} \xB7 ${leftTitle}` : title;
     const leftHeader = t.accent + ANSI.bold + fitAnsi(leftLabel, colWidth) + ANSI.reset;
     const rightGap = colWidth - visLen(rightTitle) - visLen(statusRight);
@@ -40685,6 +40687,27 @@ var SENTENCE_SKIP = 10;
 function createTts() {
   return { proc: null, sentence: "" };
 }
+async function isTtsAvailable() {
+  try {
+    if (process.platform === "darwin") {
+      const proc = Bun.spawn(["say", "-v", "?"], {
+        stdout: "ignore",
+        stderr: "ignore"
+      });
+      await proc.exited;
+      return true;
+    } else {
+      const proc = Bun.spawn(["espeak", "--version"], {
+        stdout: "ignore",
+        stderr: "ignore"
+      });
+      await proc.exited;
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
 function ttsSpeak(handle, sentence, wpm) {
   if (sentence === handle.sentence)
     return;
@@ -41215,6 +41238,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
   }
   const initState = await getFileState(content.hash).catch(() => null);
   let localBookmarks = initState?.bookmarks ?? [];
+  const ttsAvailable = await isTtsAvailable();
   const getChapterTitle = () => {
     const page = pages[currentPage];
     if (!page)
@@ -41280,6 +41304,7 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
     selection,
     isBookmarked: checkIsBookmarked(selection),
     images: content.images,
+    ttsAvailable,
     ...bookmarkLineState()
   });
   enableMouseTracking();

@@ -63,6 +63,30 @@ function createTts(): TtsHandle {
   return { proc: null, sentence: "" };
 }
 
+async function isTtsAvailable(): Promise<boolean> {
+  try {
+    if (process.platform === "darwin") {
+      // Try to run 'say' with --version or similar
+      const proc = Bun.spawn(["say", "-v", "?"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      await proc.exited;
+      return true;
+    } else {
+      // Linux: check for espeak
+      const proc = Bun.spawn(["espeak", "--version"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      await proc.exited;
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
 function ttsSpeak(handle: TtsHandle, sentence: string, wpm: number): void {
   if (sentence === handle.sentence) return; // same sentence already playing
   handle.sentence = sentence;
@@ -774,6 +798,9 @@ async function runPageMode(
   const initState = await getFileState(content.hash).catch(() => null);
   let localBookmarks: import("./types.ts").Bookmark[] = initState?.bookmarks ?? [];
 
+  // Detect if TTS service is available
+  const ttsAvailable = await isTtsAvailable();
+
   const getChapterTitle = () => {
     const page = pages[currentPage];
     if (!page) return content.title;
@@ -840,6 +867,7 @@ async function runPageMode(
     selection,
     isBookmarked: checkIsBookmarked(selection),
     images: content.images,
+    ttsAvailable,
     ...bookmarkLineState(),
   });
 
