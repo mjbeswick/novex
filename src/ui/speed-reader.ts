@@ -218,35 +218,28 @@ export class SpeedReader {
   }
 
   private _buildHeaderText(progress: number): string {
-    const { wpm, chunkSize, paused } = this.state;
+    const { wpm, chunkSize, paused, words, currentChunk, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
     const ttsFlag = (this.state as SpeedReaderState & { tts?: boolean }).tts ? "  🔊" : "";
-    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "■ PAUSED" : "▶"}`;
+
+    let indexPart = "";
+    if (paused && chapterIndex !== undefined && paraIndexInChapter !== undefined) {
+      const chunk = words[currentChunk];
+      const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
+      if (currentWord) {
+        let indexContent = `§${chapterIndex + 1}.${paraIndexInChapter + 1}`;
+        if (wordIndexInPara !== null && wordIndexInPara !== undefined) {
+          indexContent += `.${wordIndexInPara + 1}`;
+        }
+        indexPart = ` ${indexContent}`;
+      }
+    }
+
+    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}${indexPart}  ${paused ? "■ PAUSED" : "▶"}`;
   }
 
   private _buildFooterText(): string {
-    const { words, currentChunk, theme, chapterIndex, paraIndexInChapter, wordIndexInPara, allWords } = this.state;
-    const t = themes[theme];
-
-    // Get current word text
-    const chunk = words[currentChunk];
-    const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
-    const currentWordIndex = chunk && chunk.length > 0 ? chunk[0].index : 0;
-
-    // Build compact hierarchical index: §chapter.paragraph.word (all 1-based)
-    let indexPath = "";
-    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
-      let indexContent = `§${chapterIndex + 1}.${paraIndexInChapter + 1}`;
-      if (wordIndexInPara !== null && wordIndexInPara !== undefined) {
-        indexContent += `.${wordIndexInPara + 1}`;
-      }
-      indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
-    }
-
-    // Show word with index, then shortcuts
-    const wordInfo = currentWord ? `"${currentWord}"${indexPath}` : "";
     const shortcuts = `[space] pause  [→][←] skip  [↑][↓] sentence  [+][-] wpm  [[]]] chunk  [q] back`;
-
-    return wordInfo ? `${wordInfo} · ${shortcuts}` : shortcuts;
+    return shortcuts;
   }
 
   private _writeHeader(headerText: string, spritzRow: number, cols: number, t: ColorTheme): void {

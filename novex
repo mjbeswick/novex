@@ -39548,27 +39548,25 @@ class SpeedReader {
     }
   }
   _buildHeaderText(progress) {
-    const { wpm, chunkSize, paused } = this.state;
+    const { wpm, chunkSize, paused, words, currentChunk, chapterIndex, paraIndexInChapter, wordIndexInPara } = this.state;
     const ttsFlag = this.state.tts ? "  \uD83D\uDD0A" : "";
-    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}`;
+    let indexPart = "";
+    if (paused && chapterIndex !== undefined && paraIndexInChapter !== undefined) {
+      const chunk = words[currentChunk];
+      const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
+      if (currentWord) {
+        let indexContent = `\xA7${chapterIndex + 1}.${paraIndexInChapter + 1}`;
+        if (wordIndexInPara !== null && wordIndexInPara !== undefined) {
+          indexContent += `.${wordIndexInPara + 1}`;
+        }
+        indexPart = ` ${indexContent}`;
+      }
+    }
+    return `${progress}%  WPM: ${wpm}  Chunk: ${chunkSize}${ttsFlag}${indexPart}  ${paused ? "\u25A0 PAUSED" : "\u25B6"}`;
   }
   _buildFooterText() {
-    const { words, currentChunk, theme, chapterIndex, paraIndexInChapter, wordIndexInPara, allWords } = this.state;
-    const t = themes[theme];
-    const chunk = words[currentChunk];
-    const currentWord = chunk && chunk.length > 0 ? chunk[0].text : "";
-    const currentWordIndex = chunk && chunk.length > 0 ? chunk[0].index : 0;
-    let indexPath = "";
-    if (chapterIndex !== undefined && paraIndexInChapter !== undefined && currentWord) {
-      let indexContent = `\xA7${chapterIndex + 1}.${paraIndexInChapter + 1}`;
-      if (wordIndexInPara !== null && wordIndexInPara !== undefined) {
-        indexContent += `.${wordIndexInPara + 1}`;
-      }
-      indexPath = ` ${ANSI.reset}${t.accent}${ANSI.bold}${indexContent}${ANSI.reset}`;
-    }
-    const wordInfo = currentWord ? `"${currentWord}"${indexPath}` : "";
     const shortcuts = `[space] pause  [\u2192][\u2190] skip  [\u2191][\u2193] sentence  [+][-] wpm  [[]]] chunk  [q] back`;
-    return wordInfo ? `${wordInfo} \xB7 ${shortcuts}` : shortcuts;
+    return shortcuts;
   }
   _writeHeader(headerText, spritzRow, cols, t) {
     if (headerText === this.lastHeaderText)
