@@ -846,9 +846,15 @@ async function runPageMode(
   enableMouseTracking();
   view.render();
 
+  // Initialize TTS handle if enabled
+  const pageModeTts = options.tts ? createTts() : null;
+
   try {
     while (true) {
-      if (isResizePending()) return currentPage;
+      if (isResizePending()) {
+        if (pageModeTts) ttsStop(pageModeTts);
+        return currentPage;
+      }
       const key = await readKey();
       if (key === "_resize") return currentPage;
       const action = view.handleKey(key);
@@ -936,12 +942,15 @@ async function runPageMode(
             }
           }
         }
+        if (pageModeTts) ttsStop(pageModeTts);
         switchMode("speed");
         return currentPage;
       } else if (action === "scroll") {
+        if (pageModeTts) ttsStop(pageModeTts);
         switchMode("scroll");
         return currentPage;
       } else if (action === "quit") {
+        if (pageModeTts) ttsStop(pageModeTts);
         quit();
         return currentPage;
       } else if (action === "help") {
@@ -963,16 +972,33 @@ async function runPageMode(
         view.updateState({ selection: null, isBookmarked: checkIsBookmarked(null) });
         view.render();
       } else if (action === "tts") {
-        if (selection?.wordIndex != null || selection?.wordText != null) {
-          const idx = selection!.wordIndex;
-          const charOff = idx != null ? allWords[idx]?.charOffset : null;
+        if (!pageModeTts) {
+          // TTS not enabled
+        } else if (selection?.wordIndex != null) {
+          // Speak from selected word
+          const idx = selection.wordIndex;
+          const charOff = allWords[idx]?.charOffset;
           if (charOff != null) {
-            const ttsHandle = createTts();
-            ttsSpeak(ttsHandle, sentenceAt(content.text, charOff), options.wpm);
-            // Let it speak async, don't block
+            ttsSpeak(pageModeTts, sentenceAt(content.text, charOff), options.wpm);
+          }
+        } else {
+          // Speak from first word on current page
+          const page = pages[currentPage];
+          if (page && page.lines.length > 0) {
+            // Find the first word on this page
+            let firstWordIdx = 0;
+            for (let i = 0; i < allWords.length; i++) {
+              // Check which word appears on this page
+              const sel = createSelectionFromWordIndex(i, allWords, pages);
+              if (sel?.pageIndex === currentPage) {
+                firstWordIdx = i;
+                break;
+              }
+            }
+            const charOff = allWords[firstWordIdx]?.charOffset ?? 0;
+            ttsSpeak(pageModeTts, sentenceAt(content.text, charOff), options.wpm);
           }
         }
-        // no-op if no selection
       } else if (action === "bookmarks") {
         const position = await showBookmarks(localBookmarks, options.theme, async (idx) => {
           await deleteBookmark(content.hash, idx).catch(() => {});
@@ -1169,6 +1195,7 @@ async function runPageMode(
       // 'command' and null — re-render or ignore
     }
   } finally {
+    if (pageModeTts) ttsStop(pageModeTts);
     disableMouseTracking();
   }
 }

@@ -41286,10 +41286,14 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
   });
   enableMouseTracking();
   view.render();
+  const pageModeTts = options2.tts ? createTts() : null;
   try {
     while (true) {
-      if (isResizePending())
+      if (isResizePending()) {
+        if (pageModeTts)
+          ttsStop(pageModeTts);
         return currentPage;
+      }
       const key = await readKey();
       if (key === "_resize")
         return currentPage;
@@ -41374,12 +41378,18 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
             }
           }
         }
+        if (pageModeTts)
+          ttsStop(pageModeTts);
         switchMode("speed");
         return currentPage;
       } else if (action === "scroll") {
+        if (pageModeTts)
+          ttsStop(pageModeTts);
         switchMode("scroll");
         return currentPage;
       } else if (action === "quit") {
+        if (pageModeTts)
+          ttsStop(pageModeTts);
         quit();
         return currentPage;
       } else if (action === "help") {
@@ -41401,12 +41411,25 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
         view.updateState({ selection: null, isBookmarked: checkIsBookmarked(null) });
         view.render();
       } else if (action === "tts") {
-        if (selection?.wordIndex != null || selection?.wordText != null) {
+        if (!pageModeTts) {} else if (selection?.wordIndex != null) {
           const idx = selection.wordIndex;
-          const charOff = idx != null ? allWords[idx]?.charOffset : null;
+          const charOff = allWords[idx]?.charOffset;
           if (charOff != null) {
-            const ttsHandle = createTts();
-            ttsSpeak(ttsHandle, sentenceAt(content.text, charOff), options2.wpm);
+            ttsSpeak(pageModeTts, sentenceAt(content.text, charOff), options2.wpm);
+          }
+        } else {
+          const page = pages[currentPage];
+          if (page && page.lines.length > 0) {
+            let firstWordIdx = 0;
+            for (let i = 0;i < allWords.length; i++) {
+              const sel = createSelectionFromWordIndex(i, allWords, pages);
+              if (sel?.pageIndex === currentPage) {
+                firstWordIdx = i;
+                break;
+              }
+            }
+            const charOff = allWords[firstWordIdx]?.charOffset ?? 0;
+            ttsSpeak(pageModeTts, sentenceAt(content.text, charOff), options2.wpm);
           }
         }
       } else if (action === "bookmarks") {
@@ -41582,6 +41605,8 @@ async function runPageMode(content, options2, pages, startPage, switchMode, quit
       }
     }
   } finally {
+    if (pageModeTts)
+      ttsStop(pageModeTts);
     disableMouseTracking();
   }
 }
