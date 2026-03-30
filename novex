@@ -38872,26 +38872,11 @@ function convertHtml(html, source, hash) {
 import { join as join2 } from "path";
 var NOVEX_DIR = join2(Bun.env.HOME ?? "~", ".novex");
 var HISTORY_FILE = join2(NOVEX_DIR, "history.json");
-var OLD_LEKTO_DIR = join2(Bun.env.HOME ?? "~", ".lekto");
-var OLD_HISTORY_FILE = join2(OLD_LEKTO_DIR, "history.json");
 async function ensureNovexDir() {
   const dir = Bun.file(NOVEX_DIR);
   await Bun.$`mkdir -p ${NOVEX_DIR}`.quiet();
 }
-async function migrateHistoryIfNeeded() {
-  const oldFile = Bun.file(OLD_HISTORY_FILE);
-  const newFile = Bun.file(HISTORY_FILE);
-  const oldExists = await oldFile.exists();
-  const newExists = await newFile.exists();
-  if (oldExists && !newExists) {
-    try {
-      const content = await oldFile.text();
-      await Bun.write(HISTORY_FILE, content);
-    } catch {}
-  }
-}
 async function loadHistory() {
-  await migrateHistoryIfNeeded();
   await ensureNovexDir();
   const file = Bun.file(HISTORY_FILE);
   const exists = await file.exists();

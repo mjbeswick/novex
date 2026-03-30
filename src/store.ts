@@ -3,8 +3,6 @@ import { join } from "node:path";
 
 const NOVEX_DIR = join(Bun.env.HOME ?? "~", ".novex");
 const HISTORY_FILE = join(NOVEX_DIR, "history.json");
-const OLD_LEKTO_DIR = join(Bun.env.HOME ?? "~", ".lekto");
-const OLD_HISTORY_FILE = join(OLD_LEKTO_DIR, "history.json");
 
 /**
  * Ensures the ~/.novex/ directory exists.
@@ -16,33 +14,10 @@ async function ensureNovexDir(): Promise<void> {
 }
 
 /**
- * Migrates history from old ~/.lekto directory to new ~/.novex directory if needed.
- */
-async function migrateHistoryIfNeeded(): Promise<void> {
-  const oldFile = Bun.file(OLD_HISTORY_FILE);
-  const newFile = Bun.file(HISTORY_FILE);
-
-  // Check if old file exists and new file doesn't
-  const oldExists = await oldFile.exists();
-  const newExists = await newFile.exists();
-
-  if (oldExists && !newExists) {
-    try {
-      // Copy old history to new location
-      const content = await oldFile.text();
-      await Bun.write(HISTORY_FILE, content);
-    } catch {
-      // Silently fail if migration doesn't work
-    }
-  }
-}
-
-/**
  * Loads the history store from ~/.novex/history.json.
  * Returns an empty store if the file does not exist.
  */
 export async function loadHistory(): Promise<HistoryStore> {
-  await migrateHistoryIfNeeded();
   await ensureNovexDir();
 
   const file = Bun.file(HISTORY_FILE);
