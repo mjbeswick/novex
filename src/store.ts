@@ -1,24 +1,24 @@
 import type { HistoryStore, FileState, Bookmark } from "./types";
 import { join } from "node:path";
 
-const LEKTO_DIR = join(Bun.env.HOME ?? "~", ".lekto");
-const HISTORY_FILE = join(LEKTO_DIR, "history.json");
+const NOVEX_DIR = join(Bun.env.HOME ?? "~", ".novex");
+const HISTORY_FILE = join(NOVEX_DIR, "history.json");
 
 /**
- * Ensures the ~/.lekto/ directory exists.
+ * Ensures the ~/.novex/ directory exists.
  */
-async function ensureLektoDir(): Promise<void> {
-  const dir = Bun.file(LEKTO_DIR);
+async function ensureNovexDir(): Promise<void> {
+  const dir = Bun.file(NOVEX_DIR);
   // Bun.file doesn't directly check directory existence; use mkdir
-  await Bun.$`mkdir -p ${LEKTO_DIR}`.quiet();
+  await Bun.$`mkdir -p ${NOVEX_DIR}`.quiet();
 }
 
 /**
- * Loads the history store from ~/.lekto/history.json.
+ * Loads the history store from ~/.novex/history.json.
  * Returns an empty store if the file does not exist.
  */
 export async function loadHistory(): Promise<HistoryStore> {
-  await ensureLektoDir();
+  await ensureNovexDir();
 
   const file = Bun.file(HISTORY_FILE);
   const exists = await file.exists();
@@ -37,10 +37,10 @@ export async function loadHistory(): Promise<HistoryStore> {
 }
 
 /**
- * Saves the history store to ~/.lekto/history.json.
+ * Saves the history store to ~/.novex/history.json.
  */
 export async function saveHistory(store: HistoryStore): Promise<void> {
-  await ensureLektoDir();
+  await ensureNovexDir();
   await Bun.write(HISTORY_FILE, JSON.stringify(store, null, 2));
 }
 

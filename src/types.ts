@@ -1,4 +1,4 @@
-// Shared type definitions for lekto-cli
+// Shared type definitions for novex
 
 export type ReadingMode = "page" | "scroll" | "speed";
 export type Theme = "light" | "dark";

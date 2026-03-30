@@ -10,7 +10,7 @@ import { runSession } from "./runner.ts";
 const program = new Command();
 
 program
-  .name("lekto")
+  .name("novex")
   .description("Terminal-based reader for EPUB, DOCX, FB2, Markdown, and plain text")
   .version("0.1.0");
 

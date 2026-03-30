@@ -38870,14 +38870,14 @@ function convertHtml(html, source, hash) {
 
 // src/store.ts
 import { join as join2 } from "path";
-var LEKTO_DIR = join2(Bun.env.HOME ?? "~", ".lekto");
-var HISTORY_FILE = join2(LEKTO_DIR, "history.json");
-async function ensureLektoDir() {
-  const dir = Bun.file(LEKTO_DIR);
-  await Bun.$`mkdir -p ${LEKTO_DIR}`.quiet();
+var NOVEX_DIR = join2(Bun.env.HOME ?? "~", ".novex");
+var HISTORY_FILE = join2(NOVEX_DIR, "history.json");
+async function ensureNovexDir() {
+  const dir = Bun.file(NOVEX_DIR);
+  await Bun.$`mkdir -p ${NOVEX_DIR}`.quiet();
 }
 async function loadHistory() {
-  await ensureLektoDir();
+  await ensureNovexDir();
   const file = Bun.file(HISTORY_FILE);
   const exists = await file.exists();
   if (!exists) {
@@ -38891,7 +38891,7 @@ async function loadHistory() {
   }
 }
 async function saveHistory(store) {
-  await ensureLektoDir();
+  await ensureNovexDir();
   await Bun.write(HISTORY_FILE, JSON.stringify(store, null, 2));
 }
 async function getFileState(hash) {
@@ -41848,7 +41848,7 @@ async function runSpeedMode(content, options2, initialChunks, words, startWord, 
 
 // src/cli.ts
 var program2 = new Command;
-program2.name("lekto").description("Terminal-based reader for EPUB, DOCX, FB2, Markdown, and plain text").version("0.1.0");
+program2.name("novex").description("Terminal-based reader for EPUB, DOCX, FB2, Markdown, and plain text").version("0.1.0");
 program2.command("read [file]").description("Open a file for reading").option("--mode <mode>", "Reading mode: page | scroll | speed | rsvp", "page").option("--wpm <number>", "Words per minute for speed/rsvp modes", "250").option("--chunk <number>", "Chunk size for speed mode", "1").option("--theme <theme>", "Color theme: dark | light", "dark").option("--line-width <chars>", "Maximum line width in characters").option("--position <position>", "Start at position (e.g. page:5 or word:200)").option("--no-save", "Disable saving reading position").option("--tts", "Enable text-to-speech synchronized with reading").action(async (file, opts) => {
   try {
     let buffer;
